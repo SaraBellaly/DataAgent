@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    container_name: dataia_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER manquant dans .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB manquant dans .env}
+      # Utilisés par psql à l'intérieur du conteneur (scripts/*.ps1)
+      PGUSER: ${POSTGRES_USER}
+      PGDATABASE: ${POSTGRES_DB}
+      # Lus par sql/01_roles.sql (\getenv) pour définir les mots de passe des rôles
+      IMMO_ADMIN_PASSWORD: ${IMMO_ADMIN_PASSWORD:?IMMO_ADMIN_PASSWORD manquant dans .env}
+      ANALYST_RO_PASSWORD: ${ANALYST_RO_PASSWORD:?ANALYST_RO_PASSWORD manquant dans .env}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - pg_stat_statements.max=10000
+      # Timings d'I/O dans EXPLAIN (ANALYZE, BUFFERS) et pg_stat_statements
+      - -c
+      - track_io_timing=on
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/sql:ro
+      - ./data/raw:/data/raw:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Données brutes (volumineuses, non versionnées)
+data/raw/*
+!data/raw/.gitkeep
+
+# Fichiers de données et archives, où qu'ils soient
+*.csv
+*.gz
+*.zip
+
+# Divers
+*.log
+.vscode/
+.idea/
