@@ -6,7 +6,7 @@
 |------|-----------|-------|--------|
 | `postgres` (`POSTGRES_USER`) | SUPERUSER (compte d'initialisation, non modifiable) | Création de l'extension, des rôles et des schémas : `sql/00_extensions.sql`, `sql/01_roles.sql` | Tous |
 | `immo_admin` | LOGIN, **NOSUPERUSER**, NOCREATEDB, NOCREATEROLE | Création des tables et chargement des données : `sql/02_schema.sql`, `sql/03_views.sql`, `sql/load/*` | Propriétaire des schémas `immo` et `immo_staging` ; membre de **`pg_read_server_files`** |
-| `analyst_ro` | LOGIN, NOSUPERUSER | Rôle de l'agent | `SELECT` sur `immo` uniquement (droits par défaut `FOR ROLE immo_admin`) ; rien sur `immo_staging` ; membre de `pg_read_all_stats` ; `statement_timeout = 30s`, `default_transaction_read_only = on` |
+| `analyst_ro` | LOGIN, NOSUPERUSER | Rôle de l'agent | `SELECT` sur `immo` uniquement (droits par défaut `FOR ROLE immo_admin`) ; rien sur `immo_staging` ; pas de table temporaire (`TEMP` retiré à `PUBLIC`) ; membre de `pg_read_all_stats` ; `statement_timeout = 30s`, `default_transaction_read_only = on` |
 
 Pourquoi un superutilisateur séparé : PostgreSQL interdit de retirer l'attribut SUPERUSER au
 compte d'initialisation du cluster (`The bootstrap user must have the SUPERUSER attribute`).
@@ -119,5 +119,40 @@ Constat après récupération :
 - Les statistiques de `pg_stat_statements` ont été remises à zéro.
 
 À retenir : ne pas lancer de processus en arrière-plan dans le conteneur `db` (ni
-`docker compose exec -d`, ni `&`), ou ajouter `init: true` au service dans
-`docker-compose.yml`, pour qu'un vrai processus init récupère les orphelins.
+`docker compose exec -d`, ni `&`).
+
+Correctif appliqué le 2026-11-14 : `init: true` a été ajouté au service `db` de
+`docker-compose.yml`, et le conteneur recréé sans toucher au volume. `docker-init` (tini) est
+désormais le PID 1 et récupère les orphelins ; le postmaster est son enfant. Vérifié après la
+recréation : 34 920 lignes INSEE et 3 793 113 lignes DVF, aucun processus orphelin dans
+`pg_stat_activity`, règles `scram-sha-256` toujours actives.
+
+## Tables temporaires : droit `TEMP` retiré à `PUBLIC` (2026-11-14)
+
+**Constat** : PostgreSQL accorde par défaut le droit `TEMP` à `PUBLIC` sur chaque base. Avec ce
+droit, `analyst_ro` pouvait créer une table temporaire après avoir désactivé lui-même la lecture
+seule (`BEGIN READ WRITE`). Cette table est propre à sa session et disparaît à la fin de celle-ci,
+mais l'exigence « ne peut rien créer » n'était pas strictement respectée. `scripts/verify.ps1`
+le signalait par une ATTENTION.
+
+**Correctif** : à la fin de `sql/01_roles.sql`,
+
+```sql
+REVOKE TEMP ON DATABASE :"DBNAME" FROM PUBLIC;   -- :"DBNAME" = base courante (immo)
+```
+
+Il a été appliqué sur la base en cours avec `scripts/init-db.ps1`, qui peut être rejoué sans
+risque. ACL de la base après correctif : `=c/postgres` (PUBLIC : connexion seulement),
+`immo_admin=c`, `analyst_ro=c`.
+
+**Vérifié** :
+- `has_database_privilege('analyst_ro', 'immo', 'TEMP')` = false (de même pour `immo_admin`) ;
+- sous `analyst_ro`, `CREATE TEMP TABLE` est refusé, que ce soit avec `BEGIN READ WRITE` ou avec
+  `SET default_transaction_read_only = off` : `permission denied to create temporary tables in
+  database "immo"`. La lecture des tables fonctionne toujours ;
+- `scripts/verify.ps1` contrôle désormais le droit `TEMP` dans le catalogue et par une tentative
+  réelle. Ces deux contrôles sont **bloquants** : une réouverture accidentelle fait échouer la
+  vérification.
+
+Effet de bord : `immo_admin` perd aussi `TEMP`, ce qui est sans conséquence, car le chargement
+n'utilise aucune table temporaire. `postgres` (superutilisateur) n'est pas concerné.

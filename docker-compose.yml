@@ -3,6 +3,10 @@ services:
     image: postgres:16
     container_name: dataia_postgres
     restart: unless-stopped
+    # Un vrai processus init (tini) en PID 1 récupère les processus orphelins :
+    # sans lui, le postmaster est PID 1 et traite la mort d'un orphelin comme un plantage
+    # (cf. docs/securite.md, incident du 2026-11-13).
+    init: true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER manquant dans .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}

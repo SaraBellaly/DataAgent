@@ -76,3 +76,11 @@ GRANT pg_read_all_stats TO analyst_ro;
 -- Schéma public : aucun droit de création (déjà le défaut en PG 15+, explicite ici)
 -- ---------------------------------------------------------------------------
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+-- ---------------------------------------------------------------------------
+-- Tables temporaires : PostgreSQL accorde TEMP à PUBLIC sur chaque base par défaut.
+-- Retiré pour que analyst_ro ne puisse rien créer, même en désactivant la lecture seule
+-- (BEGIN READ WRITE). Aucun rôle du projet n'utilise de table temporaire ; postgres
+-- (superutilisateur) n'est pas concerné. :"DBNAME" = base courante (immo).
+-- ---------------------------------------------------------------------------
+REVOKE TEMP ON DATABASE :"DBNAME" FROM PUBLIC;
