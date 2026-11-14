@@ -236,10 +236,13 @@ ORDER BY total_exec_time DESC
 LIMIT 10;
 ```
 
-**Communes les plus chères au m²**, appartements, au moins 100 ventes (environ 17 s, voir
-ci-dessous) :
+**Communes les plus chères au m²**, appartements, au moins 100 ventes. Cette requête a pris
+entre 17 et 46 s selon les exécutions, et a dépassé une fois le timeout de 30 s ; relevez
+d'abord le timeout pour la session (voir ci-dessous) :
 
 ```sql
+SET statement_timeout = '120s';
+
 SELECT code_commune, nom_commune, nb_ventes, prix_m2_moyen
 FROM v_prix_m2_commune
 WHERE annee = 2025 AND nb_ventes >= 100
@@ -249,13 +252,27 @@ LIMIT 10;
 
 ### Requêtes lentes : cas d'étude pour l'agent
 
-La vue `v_prix_m2_commune` recalcule son agrégat sur les 3,8 millions de lignes à chaque appel.
-Toute requête qui la lit prend donc **environ 17 s**, même avec un filtre sur une commune : le
-filtre ne peut pas être appliqué avant le regroupement par mutation. Avec une jointure, la durée
-s'approche du `statement_timeout` de 30 s :
+La vue `v_prix_m2_commune` recalcule son agrégat sur les 3,8 millions de lignes à chaque appel,
+même avec un filtre sur une commune : le filtre ne peut pas être appliqué avant le regroupement
+par mutation. Mesures réelles (sous `analyst_ro`, 2026-11-14) : **entre 15 et 55 s selon la
+requête** et l'état du cache.
+
+| Requête sur la vue | Durées mesurées |
+|---|---|
+| Comptage complet de la vue | 14,8 s ; 16,6 s |
+| Top 10 des communes les plus chères (ci-dessus) | 17,5 s ; **31,1 s, annulée par le timeout de 30 s** ; 46,1 s (timeout relevé) |
+| Jointure avec la population (ci-dessous) | 29,2 s ; 55,3 s (timeout relevé) |
+
+Ces requêtes dépassent donc régulièrement le `statement_timeout` de 30 s d'`analyst_ro`. Pour
+les exécuter, fixez d'abord un timeout plus long **pour la session** (cela ne modifie pas la
+valeur par défaut du rôle) :
 
 ```sql
--- Mesuré à 29,2 s : peut dépasser le timeout de 30 s d'analyst_ro
+SET statement_timeout = '120s';
+```
+
+```sql
+-- Mesurée entre 29,2 et 55,3 s : nécessite SET statement_timeout = '120s'
 SELECT v.nom_commune, c.pmun AS population, v.nb_ventes, v.prix_m2_moyen
 FROM v_prix_m2_commune v
 JOIN insee_communes c ON c.code_insee = v.code_commune
@@ -342,9 +359,11 @@ Résumé. Le détail, les vérifications et l'historique sont dans [docs/securit
   ventes d'appartement avec d'autres locaux, contre 81 133 avec un seul local. Les prix moyens
   portent donc sur un sous-ensemble de ventes « simples ». Une variante qui ignorerait les
   dépendances reste à décider.
-- **La vue est lente : environ 17 s par lecture.** Elle recalcule l'agrégat sur les 3,8 millions
-  de lignes DVF à chaque appel, même avec un filtre sur une commune. Avec une jointure, la durée
-  approche le `statement_timeout` de 30 s d'`analyst_ro` (29,2 s mesurées). Voir
+- **La vue est lente : entre 15 et 55 s selon la requête.** Elle recalcule l'agrégat sur les
+  3,8 millions de lignes DVF à chaque appel, même avec un filtre sur une commune. Le top 10 des
+  communes les plus chères a dépassé le `statement_timeout` de 30 s d'`analyst_ro` (annulé à
+  31,1 s), et la jointure avec la population a pris jusqu'à 55,3 s. Pour exécuter ces requêtes,
+  fixez d'abord `SET statement_timeout = '120s';` pour la session. Voir
   [Requêtes lentes](#requêtes-lentes--cas-détude-pour-lagent).
 - **Les codes orphelins sont documentés, pas corrigés.** 5 codes DVF (813 lignes en 2025) sont
   absents du référentiel INSEE. Ils sont expliqués dans [Codes orphelins](#codes-orphelins) et

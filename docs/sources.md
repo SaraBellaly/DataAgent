@@ -4,13 +4,27 @@ Tous les fichiers sont à déposer dans `data/raw/` (non versionné).
 
 ## DVF géolocalisé (Etalab)
 
-- Page : https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/
-- Fichiers par année : https://files.data.gouv.fr/geo-dvf/latest/csv/
-- Fichier attendu : `<annee>/full.csv.gz` (France entière), à décompresser.
-- Périmètre retenu : **une seule année complète**, la plus récente (à vérifier sur la page :
-  le dernier millésime contient en général une année en cours incomplète).
+- Page du jeu de données (adresse fournie par l'API, vérifiée) :
+  https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees
+- Méthode de récupération utilisée : l'**API data.gouv.fr**, car l'adresse du fichier change à
+  chaque publication.
+  - Jeu de données : identifiant `5cc1b94a634f4165e96436c1`, interrogé à l'adresse
+    https://www.data.gouv.fr/api/1/datasets/5cc1b94a634f4165e96436c1/
+  - Ressource retenue : celle intitulée **« DVF 2025 »**, au format `csv.gz` (fichier
+    `full-2025.csv.gz`, 116 267 867 octets).
+  - Publication utilisée : **20 octobre 2026** (`created_at` = 2026-10-20 dans l'API). Adresse
+    du fichier à cette date :
+    https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres-geolocalisees/20261020-114721/full-2025.csv.gz
+- Fichiers dans `data/raw/` :
+  - `dvf_2025.csv.gz` : l'archive téléchargée, conservée ;
+  - **`dvf_2025.csv`** : le fichier décompressé (731 194 611 octets), **seul fichier lu par le
+    chargement** (nom attendu par défaut par `scripts/load.ps1`).
+- Contenu : 3 793 113 lignes, toutes datées de 2025 (du 2025-01-01 au 2025-12-31) ; séparateur
+  `,`, décimales avec un point, dates `AAAA-MM-JJ`, codes commune sur 5 caractères.
+- Périmètre retenu : **une seule année complète**, la plus récente au moment du chargement.
 - Particularités : une mutation peut s'étendre sur plusieurs lignes (une par lot ou local),
   et la valeur foncière est répétée sur chacune de ces lignes.
+- Procédure pas à pas (téléchargement par l'API, décompression) : voir `INSTALL.md`, étape 5.1.
 
 ## Référentiel des communes (INSEE, Code officiel géographique)
 

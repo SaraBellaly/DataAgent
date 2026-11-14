@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette de l'agent</title>
+<style>
+  :root {
+    --fond: #f4f5f7;
+    --carte: #ffffff;
+    --texte: #1f2328;
+    --texte-doux: #59636e;
+    --bordure: #d0d7de;
+    --accent: #1f5fbf;
+    --accent-texte: #ffffff;
+    --danger: #b42318;
+    --danger-fond: #fdecea;
+    --info-fond: #eef4fc;
+    --code-fond: #f6f8fa;
+    --ombre: 0 1px 3px rgba(0, 0, 0, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #0f1215;
+      --carte: #181c21;
+      --texte: #e6e8eb;
+      --texte-doux: #9aa4af;
+      --bordure: #333a42;
+      --accent: #5b9bff;
+      --accent-texte: #0f1215;
+      --danger: #ff8a80;
+      --danger-fond: #3a1c1a;
+      --info-fond: #17253a;
+      --code-fond: #11151a;
+      --ombre: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fond);
+    color: var(--texte);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .page { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  header.intro h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header.intro p { margin: 0; color: var(--texte-doux); }
+  .bandeau {
+    margin: 16px 0 8px;
+    padding: 10px 14px;
+    border: 1px dashed var(--bordure);
+    border-radius: 8px;
+    color: var(--texte-doux);
+    font-size: .9rem;
+  }
+
+  /* Séparation entre les écrans */
+  h2.ecran-titre {
+    margin: 40px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--bordure);
+    font-size: 1.15rem;
+  }
+  h2.ecran-titre span {
+    display: inline-block;
+    min-width: 28px;
+    margin-right: 6px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-texte);
+    text-align: center;
+  }
+
+  /* Cadre d'écran (simule la fenêtre de l'application) */
+  .ecran {
+    background: var(--carte);
+    border: 1px solid var(--bordure);
+    border-radius: 10px;
+    box-shadow: var(--ombre);
+    overflow: hidden;
+  }
+  .barre {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--bordure);
+  }
+  .barre .nom { font-weight: 600; }
+  .barre .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .contenu { padding: 20px 16px; }
+  .etroit { max-width: 380px; margin: 0 auto; }
+
+  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .95rem; }
+  input[type="email"], input[type="password"], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--bordure);
+    border-radius: 6px;
+    background: var(--carte);
+    color: var(--texte);
+    font: inherit;
+  }
+  textarea { min-height: 72px; resize: vertical; }
+  .aide { margin: 4px 0 0; color: var(--texte-doux); font-size: .85rem; }
+
+  button, .bouton {
+    display: inline-block;
+    padding: 9px 16px;
+    border: 1px solid var(--bordure);
+    border-radius: 6px;
+    background: var(--carte);
+    color: var(--texte);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  button.principal { background: var(--accent); border-color: var(--accent); color: var(--accent-texte); }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button.danger.plein { background: var(--danger); color: var(--carte); }
+  .plein-largeur { width: 100%; margin-top: 18px; }
+  a { color: var(--accent); }
+  .lien-bas { margin: 14px 0 0; text-align: center; font-size: .95rem; }
+
+  .message {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: .95rem;
+  }
+  .message.erreur { background: var(--danger-fond); color: var(--danger); }
+  .message.info { background: var(--info-fond); }
+
+  .ligne-saisie { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+  .ligne-saisie textarea { flex: 1 1 320px; }
+
+  .bloc { margin-top: 20px; }
+  .bloc h3 { margin: 0 0 8px; font-size: 1rem; }
+  pre.sql {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--bordure);
+    border-radius: 6px;
+    background: var(--code-fond);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .9rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .explication { margin: 8px 0 0; color: var(--texte-doux); font-size: .95rem; }
+  .table-defile { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--bordure); text-align: left; }
+  th { font-size: .85rem; color: var(--texte-doux); text-transform: uppercase; letter-spacing: .03em; }
+  td.nombre, th.nombre { text-align: right; font-variant-numeric: tabular-nums; }
+  .options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+  ul.historique { list-style: none; margin: 0; padding: 0; }
+  ul.historique li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--bordure);
+  }
+  ul.historique .q { font-weight: 600; }
+  ul.historique .meta { color: var(--texte-doux); font-size: .85rem; }
+  .zone-compte { display: flex; justify-content: flex-end; margin-top: 20px; }
+
+  /* Boîte de confirmation, affichée en permanence pour la maquette */
+  .confirmation {
+    margin-top: 20px;
+    padding: 16px;
+    border: 2px solid var(--danger);
+    border-radius: 8px;
+    background: var(--danger-fond);
+  }
+  .confirmation h3 { margin: 0 0 6px; color: var(--danger); font-size: 1rem; }
+  .confirmation p { margin: 0; }
+  .confirmation .options { justify-content: flex-end; }
+  .note { margin: 8px 0 0; color: var(--texte-doux); font-size: .85rem; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="intro">
+    <h1>Agent de gestion de base de données</h1>
+    <p>Maquette statique des quatre écrans de l'application (projet 11, Bellaly – Atata).</p>
+  </header>
+  <p class="bandeau">Maquette non fonctionnelle : les formulaires n'envoient rien. Les résultats affichés
+    sur l'écran Question sont des valeurs réelles de la base (DVF 2025, vue <code>v_prix_m2_commune</code>).
+    Les dates de l'historique sont des emplacements (jj/mm/aaaa).</p>
+
+  <!-- ============================ ÉCRAN 1 ============================ -->
+  <h2 class="ecran-titre"><span>1</span>Écran Inscription</h2>
+  <section class="ecran" aria-label="Écran Inscription">
+    <div class="barre"><span class="nom">Agent de gestion de base de données</span></div>
+    <div class="contenu">
+      <form class="etroit" onsubmit="return false">
+        <h3>Créer un compte</h3>
+        <label for="ins-email">Adresse email</label>
+        <input id="ins-email" type="email" placeholder="prenom.nom@exemple.fr" autocomplete="email">
+        <label for="ins-mdp">Mot de passe</label>
+        <input id="ins-mdp" type="password" placeholder="••••••••••••" autocomplete="new-password">
+        <p class="aide">Seuls l'email et le mot de passe sont demandés. Le mot de passe est stocké haché (argon2 ou bcrypt).</p>
+        <button class="principal plein-largeur" type="submit">Créer mon compte</button>
+        <p class="lien-bas">Déjà un compte ? <a href="#connexion">Se connecter</a></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================ ÉCRAN 2 ============================ -->
+  <h2 class="ecran-titre" id="connexion"><span>2</span>Écran Connexion</h2>
+  <section class="ecran" aria-label="Écran Connexion">
+    <div class="barre"><span class="nom">Agent de gestion de base de données</span></div>
+    <div class="contenu">
+      <form class="etroit" onsubmit="return false">
+        <h3>Se connecter</h3>
+        <p class="message erreur" role="alert">Email ou mot de passe incorrect.</p>
+        <label for="cnx-email">Adresse email</label>
+        <input id="cnx-email" type="email" placeholder="prenom.nom@exemple.fr" autocomplete="email">
+        <label for="cnx-mdp">Mot de passe</label>
+        <input id="cnx-mdp" type="password" placeholder="••••••••••••" autocomplete="current-password">
+        <button class="principal plein-largeur" type="submit">Se connecter</button>
+        <p class="message info" style="margin-top:14px">Après 5 échecs de connexion, l'accès à ce compte est bloqué pendant 15 minutes.
+          Une session dure 8 heures ; vous pouvez vous déconnecter à tout moment.</p>
+        <p class="lien-bas">Pas encore de compte ? <a href="#">Créer un compte</a></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================ ÉCRAN 3 ============================ -->
+  <h2 class="ecran-titre"><span>3</span>Écran Question</h2>
+  <section class="ecran" aria-label="Écran Question">
+    <div class="barre">
+      <span class="nom">Agent de gestion de base de données</span>
+      <span class="actions">
+        <button type="button">Historique</button>
+        <button type="button">Se déconnecter</button>
+      </span>
+    </div>
+    <div class="contenu">
+      <form onsubmit="return false">
+        <label for="question">Votre question, en français</label>
+        <div class="ligne-saisie">
+          <textarea id="question">Quel est le prix moyen au m² des appartements à Bordeaux et à Toulouse en 2025 ?</textarea>
+          <button class="principal" type="submit">Interroger</button>
+        </div>
+      </form>
+
+      <div class="bloc">
+        <h3>Requête SQL proposée</h3>
+        <pre class="sql">SELECT code_commune, nom_commune, nb_ventes, prix_m2_moyen
+FROM v_prix_m2_commune
+WHERE code_commune IN ('33063', '31555') AND annee = 2025
+ORDER BY prix_m2_moyen DESC;</pre>
+        <p class="explication">Une seule instruction <code>SELECT</code>, vérifiée avant exécution, puis exécutée en lecture seule
+          (rôle <code>analyst_ro</code>). La vue ne retient que les ventes comportant un seul local de type appartement,
+          avec un prix au m² compris entre 500 et 30 000 €.</p>
+        <div class="options"><button class="principal" type="button">Valider et exécuter</button></div>
+      </div>
+
+      <div class="bloc">
+        <h3>Résultats</h3>
+        <div class="table-defile">
+          <table>
+            <thead>
+              <tr>
+                <th>Code commune</th>
+                <th>Commune</th>
+                <th class="nombre">Ventes</th>
+                <th class="nombre">Prix moyen (€/m²)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>33063</td><td>Bordeaux</td><td class="nombre">1 262</td><td class="nombre">4 480</td></tr>
+              <tr><td>31555</td><td>Toulouse</td><td class="nombre">1 152</td><td class="nombre">4 153</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="options">
+          <button type="button">Afficher le plan d'exécution (EXPLAIN)</button>
+          <button type="button">Voir les recommandations (à valider)</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ÉCRAN 4 ============================ -->
+  <h2 class="ecran-titre"><span>4</span>Écran Historique</h2>
+  <section class="ecran" aria-label="Écran Historique">
+    <div class="barre">
+      <span class="nom">Mon historique</span>
+      <span class="actions">
+        <button type="button">Question</button>
+        <button type="button">Se déconnecter</button>
+      </span>
+    </div>
+    <div class="contenu">
+      <ul class="historique">
+        <li>
+          <div>
+            <div class="q">Quel est le prix moyen au m² des appartements à Bordeaux et à Toulouse en 2025 ?</div>
+            <div class="meta">jj/mm/aaaa hh:mm · 2 lignes de résultat</div>
+          </div>
+          <button type="button">Rouvrir</button>
+        </li>
+        <li>
+          <div>
+            <div class="q">Quel est le prix moyen au m² des appartements à Bordeaux en 2025 ?</div>
+            <div class="meta">jj/mm/aaaa hh:mm · 1 ligne de résultat</div>
+          </div>
+          <button type="button">Rouvrir</button>
+        </li>
+        <li>
+          <div>
+            <div class="q">Quelles sont les requêtes les plus lentes ?</div>
+            <div class="meta">jj/mm/aaaa hh:mm · diagnostic et recommandations</div>
+          </div>
+          <button type="button">Rouvrir</button>
+        </li>
+      </ul>
+      <p class="note">Seules vos propres questions sont affichées.</p>
+
+      <div class="zone-compte"><button class="danger" type="button">Supprimer mon compte</button></div>
+
+      <div class="confirmation" role="alertdialog" aria-labelledby="conf-titre" aria-describedby="conf-texte">
+        <h3 id="conf-titre">Supprimer définitivement votre compte ?</h3>
+        <p id="conf-texte">Votre compte, toutes vos sessions et tout votre historique seront supprimés. Cette action est irréversible.</p>
+        <div class="options">
+          <button type="button">Annuler</button>
+          <button class="danger plein" type="button">Confirmer la suppression</button>
+        </div>
+      </div>
+      <p class="note">Boîte de confirmation affichée en permanence pour la maquette ; dans l'application, elle n'apparaît qu'après un clic sur « Supprimer mon compte ».</p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
