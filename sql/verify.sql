@@ -58,9 +58,9 @@ FROM n, LATERAL (VALUES
 WITH documentes(code, explication) AS (VALUES
     ('97127', 'Saint-Martin : COG des collectivités non chargé'),
     ('97123', 'Saint-Barthélemy : COG des collectivités non chargé'),
-    ('44219', 'à identifier'),
-    ('49069', 'à identifier'),
-    ('49144', 'à identifier')
+    ('44219', 'Vritz : fusionnée en 2018 dans 44180'),
+    ('49069', 'Orée d''Anjou : code 49126 depuis 2025'),
+    ('49144', 'Freigné : 44225 en 2018, fusionnée dans 44180')
 )
 SELECT d.code_commune, min(d.nom_commune) AS nom_dans_dvf, count(*) AS lignes,
        CASE WHEN doc.code IS NULL THEN 'NOUVEAU' ELSE 'documenté' END AS statut,
@@ -113,7 +113,28 @@ FROM (VALUES
          WHERE s.setrole = 'analyst_ro'::regrole AND s.setdatabase = 0)),
     ('analyst_ro : lecture seule par défaut',             true,
         (SELECT 'default_transaction_read_only=on' = ANY (s.setconfig) FROM pg_db_role_setting s
-         WHERE s.setrole = 'analyst_ro'::regrole AND s.setdatabase = 0))
+         WHERE s.setrole = 'analyst_ro'::regrole AND s.setdatabase = 0)),
+    -- Cloisonnement application / agent (fiche de cadrage, section 6.2)
+    ('analyst_ro : accès au schéma app',                  false,
+        has_schema_privilege('analyst_ro', 'app', 'USAGE')),
+    ('analyst_ro : un droit sur une table de app',        false,
+        EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'app' AND c.relkind IN ('r', 'v', 'm', 'p')
+                  AND has_table_privilege('analyst_ro', c.oid, 'SELECT, INSERT, UPDATE, DELETE'))),
+    ('app_agent : superutilisateur',                      false,
+        (SELECT rolsuper FROM pg_roles WHERE rolname = 'app_agent')),
+    ('app_agent : accès au schéma immo',                  false,
+        has_schema_privilege('app_agent', 'immo', 'USAGE')),
+    ('app_agent : CREATE sur le schéma app',              false,
+        has_schema_privilege('app_agent', 'app', 'CREATE')),
+    ('app_agent : TRUNCATE sur une table de app',         false,
+        EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'app' AND c.relkind = 'r'
+                  AND has_table_privilege('app_agent', c.oid, 'TRUNCATE'))),
+    ('app_agent : écriture sur users, sessions, historique', true,
+        (SELECT count(*) = 3 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'app' AND c.relname IN ('users', 'sessions', 'historique')
+           AND has_table_privilege('app_agent', c.oid, 'SELECT, INSERT, UPDATE, DELETE')))
 ) AS c(controle, attendu, obtenu)
 \gset
 

@@ -17,6 +17,7 @@ services:
       # Lus par sql/01_roles.sql (\getenv) pour définir les mots de passe des rôles
       IMMO_ADMIN_PASSWORD: ${IMMO_ADMIN_PASSWORD:?IMMO_ADMIN_PASSWORD manquant dans .env}
       ANALYST_RO_PASSWORD: ${ANALYST_RO_PASSWORD:?ANALYST_RO_PASSWORD manquant dans .env}
+      APP_AGENT_PASSWORD: ${APP_AGENT_PASSWORD:?APP_AGENT_PASSWORD manquant dans .env}
     command:
       - postgres
       - -c

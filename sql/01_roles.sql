@@ -9,9 +9,13 @@
 --                fichier serveur ; droit sensible, cf. docs/securite.md).
 --   analyst_ro : rôle de l'agent. Lecture seule sur immo, statement_timeout 30 s,
 --                lecture de pg_stat_statements (pg_read_all_stats).
+--   app_agent  : rôle de l'application (comptes, sessions, historique). Lecture et écriture
+--                sur les seules tables du schéma app (droits accordés dans 06_app_schema.sql),
+--                aucun droit sur immo. analyst_ro n'a aucun accès au schéma app.
 
 \getenv admin_password IMMO_ADMIN_PASSWORD
 \getenv ro_password ANALYST_RO_PASSWORD
+\getenv app_password APP_AGENT_PASSWORD
 \if :{?admin_password}
 \else
   \echo 'ERREUR : IMMO_ADMIN_PASSWORD absent de l environnement du conteneur.'
@@ -20,6 +24,11 @@
 \if :{?ro_password}
 \else
   \echo 'ERREUR : ANALYST_RO_PASSWORD absent de l environnement du conteneur.'
+  \quit 1
+\endif
+\if :{?app_password}
+\else
+  \echo 'ERREUR : APP_AGENT_PASSWORD absent de l environnement du conteneur.'
   \quit 1
 \endif
 
@@ -71,6 +80,29 @@ ALTER DEFAULT PRIVILEGES FOR ROLE immo_admin IN SCHEMA immo GRANT SELECT ON TABL
 
 -- Lecture de pg_stat_statements pour toutes les requêtes (validé : projet local)
 GRANT pg_read_all_stats TO analyst_ro;
+
+-- ---------------------------------------------------------------------------
+-- app_agent et schéma app (comptes, sessions, historique)
+-- ---------------------------------------------------------------------------
+SELECT 'CREATE ROLE app_agent'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_agent')
+\gexec
+SELECT format('ALTER ROLE app_agent WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
+              :'app_password')
+\gexec
+
+-- L'application n'exécute que des requêtes courtes et paramétrées
+ALTER ROLE app_agent SET statement_timeout = '5s';
+ALTER ROLE app_agent SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE app_agent SET search_path = app;
+
+GRANT CONNECT ON DATABASE :"DBNAME" TO app_agent;
+
+-- Schéma possédé par immo_admin (qui y crée les tables) ; app_agent n'y crée rien
+CREATE SCHEMA IF NOT EXISTS app AUTHORIZATION immo_admin;
+ALTER SCHEMA app OWNER TO immo_admin;
+REVOKE ALL ON SCHEMA app FROM PUBLIC;
+GRANT USAGE ON SCHEMA app TO app_agent;
 
 -- ---------------------------------------------------------------------------
 -- Schéma public : aucun droit de création (déjà le défaut en PG 15+, explicite ici)

@@ -57,7 +57,11 @@ script de vérification les liste avec leur nombre de lignes, sans les corriger.
 |-------|-------------------|-----------------|--------|
 | 97123 | Saint-Barthélemy  | 160 | Collectivité d'outre-mer. Elle figure dans le fichier COG des collectivités (`v_commune_comer`), qui n'est **volontairement pas chargé**. |
 | 97127 | Saint-Martin      | 646 | Même cas. |
-| 44219, 49069, 49144 | à identifier | 4, 2, 1 | Absents du COG 2026 (`COM`/`ARM`). Probablement d'anciennes communes fusionnées, à confirmer avec `v_mvt_commune_2026`. |
+| 44219 | Vritz | 4 | **Fusionné le 01/01/2018** dans Vallons-de-l'Erdre (44180). Les transactions DVF 2025 avec ce code utilisent l'ancien code communal. Source : `v_mvt_commune_2026.csv`, MOD=32. |
+| 49069 | Orée d'Anjou | 2 | Commune fusionnée créée le 15/12/2015 par fusion de 9 communes. **Code changé le 01/01/2025** en 49126. Les 2 transactions DVF avec l'ancien code 49069 datent pourtant du 18/06 et du 01/07/2025, après le changement. Source : `v_mvt_commune_2026.csv`, MOD=50. |
+| 49144 | Freigné | 1 | **Changement de département le 01/01/2018** : passage du département 49 (Maine-et-Loire) au 44 (Loire-Atlantique) sous le code 44225, puis, le même jour, fusion dans Vallons-de-l'Erdre (**44180**), dont Freigné est désormais commune déléguée. Le code 44225 n'existe donc plus dans le COG 2026. Source : `v_mvt_commune_2026.csv`, MOD=41 puis MOD=32. |
+
+Ces 7 ventes ont toutes été signées en 2025 (du 31/03 au 01/07/2025), donc **après** les changements de code : DVF conserve ici des codes communaux périmés. Commune actuelle : 44180 pour 44219 et 49144, 49126 pour 49069. Aucune correction n'est appliquée aux données.
 
 Conséquence : les jointures `dvf_mutations` ↔ `insee_communes` doivent être des `LEFT JOIN`
 pour ne pas perdre ces lignes, ou des `INNER JOIN` assumés quand le référentiel est requis.

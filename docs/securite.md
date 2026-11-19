@@ -5,8 +5,9 @@
 | Rôle | Attributs | Usage | Droits |
 |------|-----------|-------|--------|
 | `postgres` (`POSTGRES_USER`) | SUPERUSER (compte d'initialisation, non modifiable) | Création de l'extension, des rôles et des schémas : `sql/00_extensions.sql`, `sql/01_roles.sql` | Tous |
-| `immo_admin` | LOGIN, **NOSUPERUSER**, NOCREATEDB, NOCREATEROLE | Création des tables et chargement des données : `sql/02_schema.sql`, `sql/03_views.sql`, `sql/load/*` | Propriétaire des schémas `immo` et `immo_staging` ; membre de **`pg_read_server_files`** |
+| `immo_admin` | LOGIN, **NOSUPERUSER**, NOCREATEDB, NOCREATEROLE | Création des tables et chargement des données : `sql/02_schema.sql`, `sql/03_views.sql`, `sql/04_materialized_view.sql`, `sql/06_app_schema.sql`, `sql/load/*` | Propriétaire des schémas `immo`, `immo_staging` et `app` ; membre de **`pg_read_server_files`** |
 | `analyst_ro` | LOGIN, NOSUPERUSER | Rôle de l'agent | `SELECT` sur `immo` uniquement (droits par défaut `FOR ROLE immo_admin`) ; rien sur `immo_staging` ; pas de table temporaire (`TEMP` retiré à `PUBLIC`) ; membre de `pg_read_all_stats` ; `statement_timeout = 30s`, `default_transaction_read_only = on` |
+| `app_agent` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE | Rôle de l'application FastAPI : comptes, sessions, historique | `SELECT`, `INSERT`, `UPDATE`, `DELETE` sur `app.users`, `app.sessions`, `app.historique` uniquement (`sql/06_app_schema.sql`) ; ni `TRUNCATE` ni `CREATE` ; **aucun accès à `immo`** ; `statement_timeout = 5s` |
 
 Pourquoi un superutilisateur séparé : PostgreSQL interdit de retirer l'attribut SUPERUSER au
 compte d'initialisation du cluster (`The bootstrap user must have the SUPERUSER attribute`).

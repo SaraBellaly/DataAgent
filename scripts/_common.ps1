@@ -26,6 +26,7 @@ function Get-RolePassword {
         $DotEnv['POSTGRES_USER'] { 'POSTGRES_PASSWORD' }
         'immo_admin'             { 'IMMO_ADMIN_PASSWORD' }
         'analyst_ro'             { 'ANALYST_RO_PASSWORD' }
+        'app_agent'              { 'APP_AGENT_PASSWORD' }
         default                  { throw "Role inconnu : $User" }
     }
     if (-not $DotEnv[$key]) { throw "$key absent de .env" }
