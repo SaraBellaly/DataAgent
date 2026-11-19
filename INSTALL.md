@@ -13,9 +13,12 @@ INSEE, reliées par le code commune. Elle sert de terrain à un agent qui analys
 
 - un conteneur PostgreSQL 16 sur votre machine, avec `pg_stat_statements` activé ;
 - deux tables chargées : 34 920 communes et 3 793 113 lignes de transactions ;
-- une vue de prix au m² par commune ;
-- trois rôles, dont `analyst_ro` (lecture seule) pour l'agent ;
-- un script de vérification dont le résultat attendu est **31 OK, 0 échec, 0 ATTENTION**.
+- une vue de prix au m² par commune, et sa version matérialisée (moins de 2 ms par requête) ;
+- trois rôles de travail : `immo_admin` (chargement), `analyst_ro` (lecture seule, pour l'agent)
+  et `app_agent` (comptes, sessions et historique de l'application) ;
+- l'application FastAPI (authentification et historique) sur `http://127.0.0.1:8000`, avec ses
+  31 tests automatiques ;
+- un script de vérification dont le résultat attendu est **38 OK, 0 échec, 0 ATTENTION**.
 
 Durée totale : environ 30 minutes, dont 8 minutes de chargement. Le téléchargement des données
 (environ 120 Mo) dépend de votre connexion.
@@ -78,8 +81,9 @@ Copy-Item .env.example .env
 
 Ouvrez `.env` dans un éditeur (par exemple `notepad .env` sous Windows) et modifiez-le ainsi :
 
-1. Remplacez chaque `a_remplacer` par un mot de passe : il y en a **trois**,
-   `POSTGRES_PASSWORD`, `IMMO_ADMIN_PASSWORD` et `ANALYST_RO_PASSWORD`.
+1. Remplacez chaque `a_remplacer` par un mot de passe : il y en a **quatre**,
+   `POSTGRES_PASSWORD`, `IMMO_ADMIN_PASSWORD`, `ANALYST_RO_PASSWORD` et `APP_AGENT_PASSWORD`
+   (rôle de l'application : comptes, sessions, historique).
 2. Remplacez `POSTGRES_PORT=5432` par **`POSTGRES_PORT=5433`**, ou par le port libre choisi à
    l'étape 2.
 
@@ -101,6 +105,9 @@ POSTGRES_DB=immo
 POSTGRES_PORT=5433
 IMMO_ADMIN_PASSWORD=<votre mot de passe 2>
 ANALYST_RO_PASSWORD=<votre mot de passe 3>
+APP_AGENT_PASSWORD=<votre mot de passe 4>
+APP_PORT=8000
+COOKIE_SECURE=false
 ```
 
 > **`.env` ne doit jamais être commité.** Il contient les mots de passe en clair. Le fichier
@@ -231,7 +238,7 @@ La provenance détaillée des données est décrite dans [docs/sources.md](docs/
 ### 6.1 Lancer le conteneur
 
 ```powershell
-docker compose up -d
+docker compose up -d db
 ```
 
 Lors du premier lancement, Docker télécharge l'image `postgres:16`, puis initialise la base.
@@ -272,6 +279,10 @@ CREATE INDEX
 ...
 CREATE VIEW
 ...
+>> /sql/06_app_schema.sql (en tant que immo_admin)
+CREATE TABLE
+...
+GRANT
 Initialisation terminee.
 ```
 
@@ -356,6 +367,19 @@ Le script s'exécute alors dans une transaction annulée à la fin (`BEGIN … R
 **Garde-fou** : un second `.\scripts\load.ps1` est **refusé**, avec un message `chargement refuse
 (rien n'a ete modifie)`. C'est voulu : le chargement ne modifie jamais des données existantes.
 
+### 7.1 Vue matérialisée des prix au m²
+
+La vue `v_prix_m2_commune` recalcule son agrégat sur 3,8 millions de lignes à chaque lecture
+(5 à 55 s). Sa version matérialisée, indexée, se calcule une fois après le chargement :
+
+```powershell
+.\scripts\create-mat-view.ps1
+```
+
+Résultat attendu, en quelques secondes : `lignes_vue_mat` = **4219**, puis la ligne verte
+`Vue materialisee creee avec succes.` Après tout nouveau chargement, rafraîchissez-la avec
+`.\scriptsefresh-mat-view.ps1`.
+
 ## 8. Vérification
 
 ```powershell
@@ -379,10 +403,35 @@ Résultat attendu :
 ```
  ok | echecs | attention
 ----+--------+-----------
- 31 |      0 |         0
+ 38 |      0 |         0
 
 Verification terminee : tous les controles bloquants sont OK.
 ```
+
+### 8.1 Application et tests automatiques
+
+L'application FastAPI (inscription, connexion, historique) tourne dans un second conteneur :
+
+```powershell
+docker compose up -d --build backend
+```
+
+Résultat attendu : `http://127.0.0.1:8000/health/db` (port `APP_PORT` de `.env`) renvoie
+`"status":"connected"` et `"user":"analyst_ro"`. La documentation interactive de l'API est sur
+`http://127.0.0.1:8000/docs`.
+
+Les tests nécessitent Python 3.11 ; ils utilisent la base réelle et suppriment leurs comptes de
+test à la fin :
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python -m pytest
+cd ..
+```
+
+Résultat attendu : `31 passed`.
 
 ## 9. Requêtes d'exemple
 

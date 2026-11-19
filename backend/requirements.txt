@@ -1,28 +1,19 @@
-# FastAPI et serveur ASGI
-fastapi==0.109.2
-uvicorn[standard]==0.27.1
+# Framework web et serveur ASGI
+fastapi==0.141.1
+uvicorn[standard]==0.49.0
 
-# Base de données
-sqlalchemy==2.0.27
-psycopg2-binary==2.9.9
-alembic==1.13.1
+# PostgreSQL : requêtes paramétrées (psycopg 3) et pool de connexions
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
 
-# Validation et sérialisation
-pydantic==2.6.1
-pydantic-settings==2.1.0
+# Configuration et validation
+pydantic==2.12.5
+pydantic-settings==2.14.2
+email-validator==2.1.0.post1
 
-# Sécurité et authentification (pour phases futures)
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
-
-# Variables d'environnement
-python-dotenv==1.0.1
+# Hachage des mots de passe (argon2id)
+argon2-cffi==25.1.0
 
 # Tests
-pytest==7.4.4
-pytest-asyncio==0.21.1
-httpx==0.25.2
-
-# Utilitaires
-email-validator==2.1.0.post1
+pytest==9.2.0
+httpx==0.28.1

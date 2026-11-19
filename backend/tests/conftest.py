@@ -1,97 +1,66 @@
 """
-Fixtures pytest partagées pour les tests.
-
-Sépare clairement les tests unitaires (avec mocks) des tests d'intégration (vraie BD).
+Fixtures partagées. Les tests utilisent la vraie base PostgreSQL (rôles analyst_ro et app_agent),
+lue dans le .env racine. Les comptes de test ont des emails pytest-…@example.com et sont
+supprimés à la fin de la session de tests.
 """
+import uuid
+
 import pytest
-from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
+from app.db.connection import pool_app
 from app.main import app
-from app.core.config import settings
+
+TEST_PASSWORD = "Motdepasse-de-test-1"
+
+
+@pytest.fixture(scope="session")
+def _app_started():
+    # Une seule exécution du lifespan : les pools psycopg ne se rouvrent pas après fermeture
+    with TestClient(app) as c:
+        yield c
+    # (le nettoyage est fait dans _cleanup_test_users, avant la fermeture des pools)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_test_users(_app_started):
+    yield
+    with pool_app.connection() as conn:
+        conn.execute("DELETE FROM app.users WHERE email LIKE 'pytest-%%@example.com'")
 
 
 @pytest.fixture
-def client():
-    """
-    Client de test FastAPI pour requêtes HTTP.
-
-    Crée une nouvelle instance d'app pour chaque test.
-
-    Usage:
-        def test_endpoint(client):
-            response = client.get("/")
-            assert response.status_code == 200
-    """
-    with TestClient(app) as test_client:
-        yield test_client
+def client(_app_started):
+    """Client HTTP neuf (sans cookie) à chaque test, sur la même application.
+    Sans `with` : le lifespan (ouverture des pools) a déjà été exécuté par _app_started."""
+    c = TestClient(app)
+    yield c
+    c.close()
 
 
 @pytest.fixture
-def client_with_mock_db_connected(monkeypatch):
-    """
-    Client de test FastAPI avec mock de connexion PostgreSQL réussie.
+def new_client(_app_started):
+    """Fabrique de clients indépendants (un navigateur par utilisateur)."""
+    clients = []
 
-    Utilise monkeypatch pour remplacer les fonctions du module connection
-    AVANT l'import dans main.py (qui les utilise dans le lifespan).
+    def make():
+        c = TestClient(app)
+        clients.append(c)
+        return c
 
-    Usage:
-        def test_health_with_mock(client_with_mock_db_connected):
-            response = client_with_mock_db_connected.get("/health/db")
-            assert response.status_code == 200
-    """
-    from app.db import connection
+    yield make
+    for c in clients:
+        c.close()
 
-    async def mock_check_ok():
-        return True
 
-    async def mock_info_ok():
-        return {
-            "status": "connected",
-            "postgresql_version": "PostgreSQL 16.16",
-            "database": "immo",
-            "user": "analyst_ro",
-            "schema": "immo",
-            "tables_count": 3
-        }
-
-    # Remplacer dans le module connection AVANT le démarrage
-    monkeypatch.setattr(connection, "check_db_connection", mock_check_ok)
-    monkeypatch.setattr(connection, "get_db_info", mock_info_ok)
-
-    # Créer le TestClient avec les fonctions mockées
-    with TestClient(app) as test_client:
-        yield test_client
+def unique_email() -> str:
+    return f"pytest-{uuid.uuid4().hex[:12]}@example.com"
 
 
 @pytest.fixture
-def client_with_mock_db_disconnected(monkeypatch):
-    """
-    Client de test FastAPI avec mock de connexion PostgreSQL échouée.
-
-    Utilise monkeypatch pour remplacer les fonctions du module connection
-    AVANT l'import dans main.py (qui les utilise dans le lifespan).
-
-    Usage:
-        def test_db_error(client_with_mock_db_disconnected):
-            response = client_with_mock_db_disconnected.get("/health/db")
-            assert response.json()["status"] == "disconnected"
-    """
-    from app.db import connection
-
-    async def mock_check_fail():
-        return False
-
-    async def mock_info_fail():
-        return {
-            "status": "error",
-            "error": "Connection refused"
-        }
-
-    # Remplacer dans le module connection AVANT le démarrage
-    monkeypatch.setattr(connection, "check_db_connection", mock_check_fail)
-    monkeypatch.setattr(connection, "get_db_info", mock_info_fail)
-
-    # Créer le TestClient avec les fonctions mockées
-    with TestClient(app) as test_client:
-        yield test_client
+def registered(client):
+    """Compte de test inscrit : (email, mot de passe)."""
+    email = unique_email()
+    r = client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD})
+    assert r.status_code == 201, r.text
+    return email, TEST_PASSWORD

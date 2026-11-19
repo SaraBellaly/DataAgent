@@ -1,176 +1,69 @@
 """
-Gestion des connexions PostgreSQL avec SQLAlchemy.
+Connexions PostgreSQL (psycopg 3), deux pools séparés :
 
-Deux connexions distinctes :
-1. engine_ro : lecture seule sur les données immobilières (DVF/INSEE) avec rôle analyst_ro
-2. engine_app : lecture/écriture pour les données applicatives (users, history) - Phase 3.2+
+- pool_ro  : rôle analyst_ro, lecture seule sur immo (outils de l'agent, health check).
+             Il n'a aucun accès aux comptes ni à l'historique.
+- pool_app : rôle app_agent, lecture et écriture sur le schéma app uniquement.
+             Il n'exécute que des requêtes écrites par nous, toujours paramétrées.
+
+Les pools sont ouverts au démarrage de l'application (lifespan de main.py).
 """
-from sqlalchemy import create_engine, text, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import StaticPool
-from typing import Generator
 import logging
+from typing import Any
+
+from psycopg_pool import ConnectionPool
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# Connexion LECTURE SEULE — Données immobilières (DVF/INSEE)
-# ============================================================================
-
-# Engine pour lecture seule avec analyst_ro
-# pool_pre_ping=True : vérifie que la connexion est vivante avant utilisation
-# connect_args : paramètres PostgreSQL
-engine_ro = create_engine(
-    settings.database_url_ro,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    connect_args={
-        "options": "-c statement_timeout=30000",  # 30s timeout (cohérent avec analyst_ro)
-        "application_name": "ai_database_engineer_api"
-    },
-    echo=settings.debug  # Log SQL si debug=True
-)
-
-# Event listener pour vérifier que la connexion est bien en lecture seule
-@event.listens_for(engine_ro, "connect")
-def receive_connect(dbapi_conn, connection_record):
-    """Vérifier et forcer le mode lecture seule sur la connexion."""
-    cursor = dbapi_conn.cursor()
-    # Vérifier le timeout configuré
-    cursor.execute("SHOW statement_timeout")
-    timeout = cursor.fetchone()[0]
-    logger.debug(f"Connexion analyst_ro établie, timeout: {timeout}")
-    cursor.close()
+pool_ro = ConnectionPool(settings.conninfo_ro, min_size=1, max_size=5, open=False, name="analyst_ro")
+pool_app = ConnectionPool(settings.conninfo_app, min_size=1, max_size=10, open=False, name="app_agent")
 
 
-# SessionLocal pour lecture seule
-SessionLocalRO = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine_ro
-)
-
-# Base déclarative pour les modèles (si on veut lire les tables existantes)
-BaseRO = declarative_base()
+def open_pools() -> None:
+    # wait=False : l'application démarre même si la base n'est pas encore prête
+    for pool in (pool_ro, pool_app):
+        if pool.closed:
+            pool.open(wait=False)
 
 
-def get_db_ro() -> Generator[Session, None, None]:
-    """
-    Dépendance FastAPI pour obtenir une session de lecture seule.
+def close_pools() -> None:
+    for pool in (pool_ro, pool_app):
+        if not pool.closed:
+            pool.close()
 
-    Usage dans les routes :
-        @router.get("/communes")
-        def list_communes(db: Session = Depends(get_db_ro)):
-            ...
-    """
-    db = SessionLocalRO()
+
+def check_db_connection() -> bool:
+    """True si analyst_ro peut se connecter et exécuter une requête."""
     try:
-        yield db
-    finally:
-        db.close()
-
-
-async def check_db_connection() -> bool:
-    """
-    Vérifie que la connexion à PostgreSQL fonctionne.
-
-    Returns:
-        bool: True si la connexion est OK, False sinon
-    """
-    try:
-        with engine_ro.connect() as conn:
-            result = conn.execute(text("SELECT 1"))
-            result.scalar()
+        with pool_ro.connection(timeout=5) as conn:
+            conn.execute("SELECT 1")
         return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
+    except Exception as exc:  # base arrêtée, mot de passe faux, délai dépassé
+        logger.error("Connexion PostgreSQL (analyst_ro) impossible : %s", exc)
         return False
 
 
-async def get_db_info() -> dict:
-    """
-    Récupère les informations sur la base de données (sans données sensibles).
-
-    Returns:
-        dict: Informations sur la base (version PostgreSQL, base, schéma)
-    """
+def get_db_info() -> dict[str, Any]:
+    """Informations non sensibles sur la base, lues avec analyst_ro."""
     try:
-        with engine_ro.connect() as conn:
-            # Version PostgreSQL
-            version_result = conn.execute(text("SELECT version()"))
-            version = version_result.scalar()
-
-            # Base de données et rôle courants
-            db_result = conn.execute(text("SELECT current_database(), current_user"))
-            current_db, current_user = db_result.one()
-
-            # Comptage tables dans schéma immo
-            count_result = conn.execute(text("""
-                SELECT count(*)
-                FROM information_schema.tables
-                WHERE table_schema = 'immo' AND table_type = 'BASE TABLE'
-            """))
-            table_count = count_result.scalar()
-
-            return {
-                "status": "connected",
-                "postgresql_version": version.split(",")[0] if version else None,
-                "database": current_db,
-                "user": current_user,
-                "schema": "immo",
-                "tables_count": table_count
-            }
-    except Exception as e:
-        logger.error(f"Failed to get database info: {e}")
+        with pool_ro.connection(timeout=5) as conn:
+            version, database, user = conn.execute(
+                "SELECT split_part(version(), ',', 1), current_database(), current_user"
+            ).fetchone()
+            (tables_count,) = conn.execute(
+                "SELECT count(*) FROM information_schema.tables "
+                "WHERE table_schema = 'immo' AND table_type = 'BASE TABLE'"
+            ).fetchone()
         return {
-            "status": "error",
-            "error": str(e)
+            "status": "connected",
+            "postgresql_version": version,
+            "database": database,
+            "user": user,
+            "schema": "immo",
+            "tables_count": tables_count,
         }
-
-
-# ============================================================================
-# Connexion LECTURE/ÉCRITURE — Données applicatives (future - Phase 3.2+)
-# ============================================================================
-
-# engine_app = None
-# SessionLocalApp = None
-# BaseApp = None
-
-# def init_app_database():
-#     """
-#     Initialise la connexion aux données applicatives.
-#     À appeler après configuration de APP_DB_* dans .env
-#     """
-#     global engine_app, SessionLocalApp, BaseApp
-#
-#     if not settings.database_url_app:
-#         logger.warning("App database URL not configured")
-#         return
-#
-#     engine_app = create_engine(
-#         settings.database_url_app,
-#         pool_pre_ping=True,
-#         pool_size=5,
-#         max_overflow=10,
-#         echo=settings.debug
-#     )
-#
-#     SessionLocalApp = sessionmaker(autocommit=False, autoflush=False, bind=engine_app)
-#     BaseApp = declarative_base()
-#
-#     logger.info("App database connection initialized")
-#
-# def get_db_app() -> Generator[Session, None, None]:
-#     """Dépendance FastAPI pour session données applicatives."""
-#     if SessionLocalApp is None:
-#         raise RuntimeError("App database not initialized")
-#
-#     db = SessionLocalApp()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
+    except Exception as exc:
+        logger.error("Lecture des informations de la base impossible : %s", exc)
+        return {"status": "error", "error": "Base de données indisponible"}

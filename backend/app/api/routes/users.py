@@ -1,14 +1,27 @@
 """
-Routes de gestion des utilisateurs : profil, liste, suppression.
-
-Phase 3.1 : Ce fichier est préparé pour la Phase 3.2.
+Compte de l'utilisateur connecté : consultation et suppression (fiche, écran 4).
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-router = APIRouter(prefix="/users", tags=["users"])
+from app import services
+from app.api.deps import clear_session_cookie, get_current_user
+from app.schemas import DeleteAccountRequest, Message, UserOut
 
-# TODO Phase 3.2:
-# - GET /users/me : profil utilisateur courant
-# - PUT /users/me : modifier profil
-# - DELETE /users/me : supprimer compte
-# - GET /users : liste utilisateurs (admin)
+router = APIRouter(prefix="/api/users", tags=["compte"])
+
+
+@router.get("/me", response_model=UserOut, responses={401: {"model": Message}})
+def me(user: dict = Depends(get_current_user)):
+    return user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT,
+               responses={400: {"model": Message}, 401: {"model": Message}})
+def delete_me(body: DeleteAccountRequest, response: Response, user: dict = Depends(get_current_user)):
+    """Supprime le compte, toutes ses sessions et tout son historique, après confirmation."""
+    if not body.confirmation:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suppression non confirmée : rien n'a été modifié.")
+    services.delete_account(user["id"])
+    clear_session_cookie(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response

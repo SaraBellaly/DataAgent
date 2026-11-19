@@ -210,8 +210,8 @@
         <label for="ins-email">Adresse email</label>
         <input id="ins-email" type="email" placeholder="prenom.nom@exemple.fr" autocomplete="email">
         <label for="ins-mdp">Mot de passe</label>
-        <input id="ins-mdp" type="password" placeholder="••••••••••••" autocomplete="new-password">
-        <p class="aide">Seuls l'email et le mot de passe sont demandés. Le mot de passe est stocké haché (argon2 ou bcrypt).</p>
+        <input id="ins-mdp" type="password" placeholder="••••••••••••" autocomplete="new-password" minlength="8" maxlength="128">
+        <p class="aide">Seuls l'email et le mot de passe (8 caractères minimum) sont demandés. Le mot de passe est stocké haché (argon2id).</p>
         <button class="principal plein-largeur" type="submit">Créer mon compte</button>
         <p class="lien-bas">Déjà un compte ? <a href="#connexion">Se connecter</a></p>
       </form>

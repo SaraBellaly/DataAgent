@@ -1,14 +1,34 @@
 """
-Routes de l'historique des conversations utilisateur.
+Historique personnel (fiche, écran 4) : chacun ne voit que ses propres échanges.
 
-Phase 3.1 : Ce fichier est préparé pour la Phase 3.3.
+Les échanges sont enregistrés par l'agent (repositories.add_history), pas par cette route.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-router = APIRouter(prefix="/history", tags=["history"])
+from app import repositories as repo
+from app.api.deps import get_current_user
+from app.db.connection import pool_app
+from app.schemas import HistoryItem, Message
 
-# TODO Phase 3.3:
-# - GET /history : liste des conversations
-# - GET /history/{id} : détails d'une conversation
-# - DELETE /history/{id} : supprimer une conversation
-# - DELETE /history : supprimer tout l'historique
+router = APIRouter(prefix="/api/history", tags=["historique"])
+
+
+@router.get("", response_model=list[HistoryItem], responses={401: {"model": Message}})
+def list_my_history(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(get_current_user),
+):
+    with pool_app.connection() as conn:
+        return repo.list_history(conn, user["id"], limit, offset)
+
+
+@router.get("/{history_id}", response_model=HistoryItem,
+            responses={401: {"model": Message}, 404: {"model": Message}})
+def get_my_history_item(history_id: int, user: dict = Depends(get_current_user)):
+    """« Introuvable » aussi pour l'échange d'un autre utilisateur : son existence n'est pas révélée."""
+    with pool_app.connection() as conn:
+        item = repo.get_history_item(conn, user["id"], history_id)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Introuvable.")
+    return item

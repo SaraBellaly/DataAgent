@@ -1,130 +1,62 @@
-# AI Database Engineer - Backend API
+# Backend FastAPI
 
-Backend FastAPI pour l'agent IA d'analyse SQL sur le marché immobilier français.
+Application web du projet 11 : authentification, historique personnel, puis agent d'analyse SQL.
+Elle suit la fiche de cadrage (`Bellaly-Atata_Projet11.md`, sections 3, 5 et 6).
 
-## Architecture
+## Ce qui est en place
+
+| Fonction (fiche) | Mise en œuvre |
+|---|---|
+| Inscription : email + mot de passe seulement | `POST /api/auth/register`. Haché **argon2id** avec sel. Email unique et en minuscules. Tout autre champ est refusé (minimisation) |
+| Connexion, session de 8 h | `POST /api/auth/login`. Pose le cookie `session` avec `HttpOnly`, `SameSite=Strict` et `Max-Age` de 8 h. La session est stockée **côté serveur** dans `app.sessions`, qui ne garde que l'empreinte SHA-256 du jeton |
+| Message d'erreur unique | « Email ou mot de passe incorrect. », que l'email existe ou non. La vérification argon2 prend la même durée dans les deux cas |
+| Blocage de 15 min après 5 échecs | Compteur `failed_logins` et date `locked_until` dans `app.users`. Réponse 429 avec le délai restant et l'en-tête `Retry-After` |
+| Déconnexion qui invalide la session | `POST /api/auth/logout`. Renseigne `revoked_at` en base : l'ancien cookie, même copié, ne vaut plus rien |
+| Historique visible de son seul auteur | `GET /api/history` et `GET /api/history/{id}`. L'identifiant de l'utilisateur vient de la session, jamais du navigateur. L'échange d'un autre utilisateur renvoie « Introuvable. » |
+| Suppression du compte avec confirmation | `DELETE /api/users/me` avec `{"confirmation": true}`. `ON DELETE CASCADE` supprime ses sessions et tout son historique |
+| Deux rôles cloisonnés | `analyst_ro` (outils de l'agent) n'a aucun accès au schéma `app`. `app_agent` (application) n'a aucun accès à `immo` et ne peut pas modifier la structure |
+| Requêtes paramétrées | psycopg 3 (`%s`), aucune concaténation de valeurs dans le SQL (`app/repositories/__init__.py`) |
+
+Les écrans et l'agent sont les étapes suivantes. La route `app/api/routes/agent.py` n'est pas encore branchée.
+
+## Organisation
 
 ```
 backend/
 ├── app/
-│   ├── main.py              # Point d'entrée FastAPI
-│   ├── core/                # Configuration et sécurité
-│   │   ├── config.py        # Variables d'environnement
-│   │   └── security.py      # JWT, hashing (Phase 3.2+)
-│   ├── api/
-│   │   └── routes/          # Endpoints HTTP
-│   │       ├── health.py    # Health checks
-│   │       ├── auth.py      # Authentification (Phase 3.2+)
-│   │       ├── users.py     # Gestion utilisateurs (Phase 3.2+)
-│   │       ├── history.py   # Historique conversations (Phase 3.3+)
-│   │       └── agent.py     # Agent Text-to-SQL (Phase 3.4+)
-│   ├── db/
-│   │   └── connection.py    # Connexions PostgreSQL
-│   ├── models/              # Modèles SQLAlchemy
-│   ├── schemas/             # Schémas Pydantic
-│   ├── services/            # Logique métier
-│   └── repositories/        # Accès données
-├── tests/                   # Tests pytest
-└── requirements.txt
+│   ├── main.py                 # application, lifespan (pools), gestion d'erreurs
+│   ├── core/config.py          # configuration (lit le .env racine)
+│   ├── core/security.py        # argon2id, jetons de session
+│   ├── db/connection.py        # pools psycopg : analyst_ro et app_agent
+│   ├── repositories/           # SQL paramétré sur le schéma app
+│   ├── services/               # inscription, connexion et blocage, déconnexion, suppression
+│   ├── schemas/                # validation Pydantic
+│   └── api/
+│       ├── deps.py             # cookie et utilisateur courant
+│       └── routes/             # health, auth, users, history (agent : à venir)
+└── tests/                      # pytest sur la base réelle (31 tests)
 ```
 
-## Phase 3.1 — Infrastructure de base
+Côté base, le schéma `app` est créé par `sql/01_roles.sql` (rôle `app_agent`) et par
+`sql/06_app_schema.sql` (tables `users`, `sessions` et `historique`, avec les droits). Les deux
+sont lancés par `scripts/init-db.ps1`, et `scripts/verify.ps1` contrôle le cloisonnement.
 
-**Statut** : ✅ En cours
+## Lancer en local
 
-### Endpoints disponibles
+Prérequis : la base est démarrée et initialisée (`scripts/init-db.ps1`), et le `.env` racine
+contient `APP_AGENT_PASSWORD`.
 
-- `GET /` — Vérifier que le backend fonctionne
-- `GET /health` — État de l'application
-- `GET /health/db` — Connexion PostgreSQL
-
-### Connexions PostgreSQL
-
-1. **Connexion lecture seule (analyst_ro)** : Pour lire les données DVF/INSEE
-   - Utilisée par les futurs endpoints de consultation
-   - Timeout 30s, read-only par défaut
-   
-2. **Connexion données applicatives (future)** : Pour utilisateurs, historique
-   - À configurer en Phase 3.2+
-   - Base/schéma séparés pour les données de l'application
-
-## Installation locale
-
-### Prérequis
-
-- Python 3.11+
-- PostgreSQL 16 (via docker-compose du projet parent)
-
-### 1. Créer un environnement virtuel
-
-```bash
+```powershell
 cd backend
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/macOS
-source venv/bin/activate
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python -m uvicorn app.main:app --reload     # http://127.0.0.1:8000/docs
+.\.venv\Scripts\python -m pytest                            # 31 tests
 ```
 
-### 2. Installer les dépendances
+Avec Docker : `docker compose up -d --build backend` publie l'application sur
+`127.0.0.1:${APP_PORT}` (8000 par défaut).
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configurer les variables d'environnement
-
-```bash
-cp .env.example .env
-# Éditer .env avec les vrais mots de passe
-```
-
-### 4. Lancer le serveur de développement
-
-```bash
-# Depuis le dossier backend/
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-API disponible sur : http://localhost:8000
-
-Documentation interactive : http://localhost:8000/docs
-
-## Lancement via Docker (Phase 3.1+)
-
-```bash
-# Depuis la racine du projet
-docker compose up -d
-```
-
-Le backend sera accessible sur http://localhost:8000.
-
-## Tests
-
-```bash
-# Lancer tous les tests
-pytest
-
-# Avec couverture
-pytest --cov=app tests/
-
-# Un fichier spécifique
-pytest tests/test_health.py -v
-```
-
-## Phases de développement
-
-- ✅ **Phase 3.1** : Infrastructure backend (endpoints de base, connexion DB)
-- ⏳ **Phase 3.2** : Authentification et gestion utilisateurs
-- ⏳ **Phase 3.3** : Historique des conversations
-- ⏳ **Phase 3.4** : Agent Text-to-SQL et exécution sécurisée
-
-## Sécurité
-
-- ✅ Rôle `analyst_ro` en lecture seule pour données DVF/INSEE
-- ✅ Mots de passe dans `.env` (non versionné)
-- ✅ Timeout 30s sur connexions lecture seule
-- ⏳ JWT pour authentification utilisateurs (Phase 3.2)
-- ⏳ Validation et sanitisation des requêtes SQL (Phase 3.4)
+La configuration est lue dans le `.env` racine, le même que celui de Docker Compose. Un
+`backend/.env` optionnel peut en surcharger des valeurs. Passez `COOKIE_SECURE=true` dès que
+l'application est servie en HTTPS.

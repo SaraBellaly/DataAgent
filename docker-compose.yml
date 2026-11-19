@@ -48,30 +48,23 @@ services:
     container_name: dataagent_backend
     restart: unless-stopped
     environment:
-      APP_NAME: "AI Database Engineer API"
-      APP_VERSION: "0.1.0"
       DEBUG: "${BACKEND_DEBUG:-false}"
-      HOST: "0.0.0.0"
-      PORT: "8000"
-      # PostgreSQL - Connexion lecture seule (données immobilières)
+      # Réseau interne Docker Compose
       POSTGRES_HOST: "db"
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB manquant}"
-      POSTGRES_USER_RO: "analyst_ro"
-      POSTGRES_PASSWORD_RO: "${ANALYST_RO_PASSWORD:?ANALYST_RO_PASSWORD manquant}"
-      # CORS origins
-      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
+      # Deux rôles distincts : analyst_ro (outils de l'agent), app_agent (comptes, historique)
+      ANALYST_RO_PASSWORD: "${ANALYST_RO_PASSWORD:?ANALYST_RO_PASSWORD manquant}"
+      APP_AGENT_PASSWORD: "${APP_AGENT_PASSWORD:?APP_AGENT_PASSWORD manquant}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       LOG_LEVEL: "INFO"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - /app/__pycache__
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 3

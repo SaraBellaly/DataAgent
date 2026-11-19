@@ -157,3 +157,45 @@ risque. ACL de la base après correctif : `=c/postgres` (PUBLIC : connexion seul
 
 Effet de bord : `immo_admin` perd aussi `TEMP`, ce qui est sans conséquence, car le chargement
 n'utilise aucune table temporaire. `postgres` (superutilisateur) n'est pas concerné.
+
+## Application : comptes, sessions et historique (2026-11-19)
+
+Mise en œuvre de la fiche de cadrage (sections 3, 6.1 et 6.2, Q10 et Q15). Code dans `backend/`.
+
+**Deux rôles cloisonnés.** Le SQL généré par le modèle s'exécutera avec `analyst_ro`, qui n'a
+aucun droit sur le schéma `app` (`REVOKE ALL ON SCHEMA app FROM PUBLIC`, aucun `GRANT`). Il ne
+peut donc lire ni les emails, ni les hachés, ni les historiques. `app_agent` n'exécute que des
+requêtes écrites par nous et toujours paramétrées (psycopg, `%s`). Il n'a aucun droit sur `immo`
+et ne peut pas modifier la structure de `app`, dont `immo_admin` est propriétaire.
+`scripts/verify.ps1` contrôle ce cloisonnement (7 contrôles bloquants). Les tests pytest le
+vérifient aussi par des tentatives réelles : `permission denied`.
+
+**Mots de passe.** Ils sont hachés avec argon2id (argon2-cffi, paramètres par défaut, sel
+aléatoire) ; une contrainte `CHECK` refuse tout ce qui n'est pas un haché argon2. Le mot de passe
+n'est jamais journalisé. Si l'email est inconnu, l'application vérifie quand même un haché
+factice : la durée de réponse ne révèle pas l'existence du compte, et le message est le même
+(« Email ou mot de passe incorrect. »).
+
+**Blocage.** Après 5 échecs consécutifs, `locked_until = now() + 15 min`. La ligne est
+verrouillée (`SELECT … FOR UPDATE`), si bien que deux tentatives simultanées comptent bien deux
+échecs. Pendant le blocage, même le bon mot de passe est refusé (HTTP 429, délai restant dans le
+message et dans `Retry-After`). *Limite assumée* : le message de blocage n'existe que pour un
+compte réel ; après 5 essais, on peut donc savoir qu'une adresse est inscrite.
+
+**Sessions.** Le jeton est un aléa de 256 bits (`secrets.token_urlsafe(32)`) posé dans le cookie
+`session` (`HttpOnly`, `SameSite=Strict`, `Max-Age` de 8 h, `Secure` si `COOKIE_SECURE=true`).
+La base ne stocke que son empreinte SHA-256 : une copie de `app.sessions` ne donne aucun jeton
+utilisable. Chaque requête vérifie la session côté serveur (non révoquée, non expirée). La
+déconnexion renseigne `revoked_at`, et l'ancien cookie, même copié, est alors refusé.
+`SameSite=Strict` empêche l'envoi du cookie depuis un autre site (CSRF). Pour la même raison,
+l'application n'active pas CORS : pages et API sont servies par la même origine.
+
+**Historique.** L'identifiant de l'utilisateur vient uniquement de la session. Chaque lecture
+filtre sur `user_id`. L'échange d'un autre utilisateur renvoie « Introuvable. », comme un
+identifiant inexistant.
+
+**Suppression du compte.** Elle exige `{"confirmation": true}`. Les clés étrangères
+`ON DELETE CASCADE` suppriment les sessions et tout l'historique avec le compte.
+
+**Erreurs.** Le gestionnaire global renvoie « Erreur interne du serveur. », sans détail SQL ni
+trace. Le détail n'apparaît que dans les journaux du serveur.

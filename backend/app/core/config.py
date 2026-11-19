@@ -1,88 +1,71 @@
 """
-Configuration de l'application via variables d'environnement.
-Utilise pydantic-settings pour la validation et le chargement automatique depuis .env
+Configuration de l'application, lue dans les variables d'environnement.
+
+Source unique : le fichier .env à la racine du dépôt (le même que pour docker compose).
+Un fichier backend/.env optionnel peut surcharger des valeurs en développement.
+Dans le conteneur, docker-compose.yml fournit les variables (POSTGRES_HOST=db, etc.).
 """
-from typing import List
-from pydantic import Field, field_validator
+from pathlib import Path
+from urllib.parse import quote_plus
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_ROOT_ENV = _BACKEND_DIR.parent / ".env"
+_BACKEND_ENV = _BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
-    """Configuration de l'application chargée depuis les variables d'environnement."""
+    app_name: str = "Agent de gestion de base de données"
+    app_version: str = "0.2.0"
+    debug: bool = False
+    log_level: str = "INFO"
 
-    # Application
-    app_name: str = Field(default="AI Database Engineer API", alias="APP_NAME")
-    app_version: str = Field(default="0.1.0", alias="APP_VERSION")
-    debug: bool = Field(default=False, alias="DEBUG")
+    # PostgreSQL (hors conteneur : base publiée sur 127.0.0.1:POSTGRES_PORT)
+    postgres_host: str = "127.0.0.1"
+    postgres_port: int = 5432
+    postgres_db: str = "immo"
 
-    # Server
-    host: str = Field(default="0.0.0.0", alias="HOST")
-    port: int = Field(default=8000, alias="PORT")
+    # Rôle de l'agent : lecture seule sur immo, aucun accès au schéma app
+    analyst_ro_user: str = "analyst_ro"
+    analyst_ro_password: str = Field(min_length=1)
 
-    # PostgreSQL - Connexion lecture seule (données immobilières DVF/INSEE)
-    # Utilise le rôle analyst_ro : lecture seule, timeout 30s
-    postgres_host: str = Field(alias="POSTGRES_HOST")
-    postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
-    postgres_db: str = Field(alias="POSTGRES_DB")
-    postgres_user_ro: str = Field(alias="POSTGRES_USER_RO")
-    postgres_password_ro: str = Field(alias="POSTGRES_PASSWORD_RO")
+    # Rôle de l'application : comptes, sessions, historique (schéma app uniquement)
+    app_agent_user: str = "app_agent"
+    app_agent_password: str = Field(min_length=1)
 
-    # PostgreSQL - Connexion données applicatives (future)
-    # Pour authentification, utilisateurs, historique des conversations
-    # app_db_host: str | None = Field(default=None, alias="APP_DB_HOST")
-    # app_db_port: int | None = Field(default=None, alias="APP_DB_PORT")
-    # app_db_name: str | None = Field(default=None, alias="APP_DB_NAME")
-    # app_db_user: str | None = Field(default=None, alias="APP_DB_USER")
-    # app_db_password: str | None = Field(default=None, alias="APP_DB_PASSWORD")
+    # Sessions (fiche de cadrage : 8 heures, cookie HttpOnly + SameSite)
+    session_cookie_name: str = "session"
+    session_duration_hours: int = 8
+    cookie_secure: bool = False  # True dès que l'application est servie en HTTPS
 
-    # CORS
-    cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
-        alias="CORS_ORIGINS"
-    )
+    # Blocage après échecs de connexion (fiche : 5 échecs => 15 minutes)
+    max_failed_logins: int = 5
+    lockout_minutes: int = 15
 
-    # Logging
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        """Parse CORS origins from string or list."""
-        if isinstance(v, str):
-            # Si c'est une string JSON
-            import json
-            try:
-                return json.loads(v)
-            except json.JSONDecodeError:
-                # Sinon, split par virgules
-                return [origin.strip() for origin in v.split(",")]
-        return v
-
-    @property
-    def database_url_ro(self) -> str:
-        """URL de connexion PostgreSQL en lecture seule (analyst_ro)."""
-        return (
-            f"postgresql://{self.postgres_user_ro}:{self.postgres_password_ro}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
-
-    # @property
-    # def database_url_app(self) -> str | None:
-    #     """URL de connexion PostgreSQL données applicatives (future)."""
-    #     if not all([self.app_db_host, self.app_db_name, self.app_db_user, self.app_db_password]):
-    #         return None
-    #     return (
-    #         f"postgresql://{self.app_db_user}:{self.app_db_password}"
-    #         f"@{self.app_db_host}:{self.app_db_port}/{self.app_db_name}"
-    #     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_ROOT_ENV, _BACKEND_ENV),
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore"
+        extra="ignore",
     )
 
+    def _conninfo(self, user: str, password: str, application_name: str) -> str:
+        return (
+            f"postgresql://{quote_plus(user)}:{quote_plus(password)}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"?application_name={application_name}"
+        )
 
-# Instance globale des settings (singleton)
+    @property
+    def conninfo_ro(self) -> str:
+        return self._conninfo(self.analyst_ro_user, self.analyst_ro_password, "dataagent_ro")
+
+    @property
+    def conninfo_app(self) -> str:
+        return self._conninfo(self.app_agent_user, self.app_agent_password, "dataagent_app")
+
+
 settings = Settings()

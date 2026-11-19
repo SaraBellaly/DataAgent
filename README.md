@@ -12,7 +12,11 @@ Données : deux sources publiques reliées par le code commune INSEE.
 | DVF géolocalisé (Etalab), 2025 | transactions immobilières | `immo.dvf_mutations` | 3 793 113 lignes, environ 1,6 Go |
 | COG INSEE 2026 et populations de référence 2023 | communes et arrondissements municipaux, avec leur population | `immo.insee_communes` | 34 920 lignes |
 
-Phase 1 terminée : infrastructure, schéma, chargement, vérification, vue de prix au m².
+**Phase 1 terminée** : infrastructure, schéma, chargement, vérification, vue de prix au m².  
+**Phase 2 terminée** : optimisation des performances (vue matérialisée), identification des codes orphelins.  
+**Phase 3, authentification terminée** : application FastAPI (`backend/`), inscription, connexion
+par session de 8 h (cookie `HttpOnly` + `SameSite`), blocage après 5 échecs, historique personnel,
+suppression du compte. Voir [backend/README.md](backend/README.md).
 
 ## Sommaire
 
@@ -23,7 +27,7 @@ Phase 1 terminée : infrastructure, schéma, chargement, vérification, vue de p
 - [Vérification](#vérification)
 - [Se connecter](#se-connecter)
 - [Requêtes d'exemple](#requêtes-dexemple)
-- [La vue v_prix_m2_commune](#la-vue-v_prix_m2_commune)
+- [La vue v_prix_m2_commune et sa version matérialisée](#la-vue-v_prix_m2_commune-et-sa-version-matérialisée)
 - [Codes orphelins](#codes-orphelins)
 - [Sécurité](#sécurité)
 - [Limites connues](#limites-connues)
@@ -32,24 +36,31 @@ Phase 1 terminée : infrastructure, schéma, chargement, vérification, vue de p
 ## Arborescence
 
 ```
-DATAIA_project/
+DataAgent/
 ├── data/raw/                  # fichiers bruts (non versionnés, cf. docs/sources.md)
 ├── docs/
 │   ├── sources.md             # provenance des données, codes hors référentiel
 │   └── securite.md            # rôles, authentification, droits sensibles, incidents
 ├── scripts/
 │   ├── _common.ps1            # fonctions partagées (lecture de .env, appel de psql dans le conteneur)
-│   ├── init-db.ps1            # extension, rôles, schémas, tables, vues (idempotent)
+│   ├── init-db.ps1            # extension, rôles, schémas, tables, vues, schéma app (idempotent)
 │   ├── load.ps1               # chargement des CSV (staging puis INSERT typé), option -DryRun
+│   ├── create-mat-view.ps1    # crée la vue matérialisée v_prix_m2_commune_mat
+│   ├── refresh-mat-view.ps1   # la rafraîchit après un nouveau chargement
 │   └── verify.ps1             # compteurs, valeurs nulles, codes orphelins, droits des rôles
 ├── sql/
 │   ├── 00_extensions.sql      # pg_stat_statements                       (postgres)
-│   ├── 01_roles.sql           # rôles immo_admin et analyst_ro, schémas  (postgres)
+│   ├── 01_roles.sql           # rôles immo_admin, analyst_ro, app_agent ; schémas (postgres)
 │   ├── 02_schema.sql          # tables et index                          (immo_admin)
 │   ├── 03_views.sql           # vue v_prix_m2_commune                    (immo_admin)
+│   ├── 04_materialized_view.sql  # vue matérialisée v_prix_m2_commune_mat (immo_admin)
+│   ├── 05_view_alternative_coverage.sql  # vue large optionnelle, non créée par défaut
+│   ├── 06_app_schema.sql      # tables app.users, sessions, historique   (immo_admin)
 │   ├── verify.sql             # contrôles lancés par verify.ps1          (analyst_ro)
 │   └── load/                  # tables de transit et scripts de chargement (immo_admin)
-├── docker-compose.yml         # PostgreSQL 16 et pg_stat_statements
+├── backend/                   # application FastAPI : authentification, historique (cf. backend/README.md)
+├── maquette/index.html        # maquette statique des quatre écrans
+├── docker-compose.yml         # PostgreSQL 16 (pg_stat_statements) et service backend
 ├── .env.example               # modèle de configuration (copier en .env)
 └── README.md
 ```
@@ -79,6 +90,9 @@ DATAIA_project/
    | `POSTGRES_PORT` | port publié sur `127.0.0.1` (5432 par défaut ; mettre 5433 si 5432 est déjà pris) |
    | `IMMO_ADMIN_PASSWORD` | propriétaire des schémas, chargement des données |
    | `ANALYST_RO_PASSWORD` | rôle en lecture seule de l'agent |
+   | `APP_AGENT_PASSWORD` | rôle de l'application : comptes, sessions, historique |
+   | `APP_PORT` | port de l'application publié sur `127.0.0.1` (8000 par défaut) |
+   | `COOKIE_SECURE` | `true` dès que l'application est servie en HTTPS (`false` en local) |
 
 2. **Démarrer et initialiser** :
 
@@ -86,8 +100,8 @@ DATAIA_project/
    .\scripts\init-db.ps1
    ```
 
-   Ce script lance le conteneur, puis crée l'extension `pg_stat_statements`, les rôles, les
-   schémas `immo` et `immo_staging`, les tables et la vue. Il peut être rejoué sans risque : il
+   Ce script lance le conteneur de la base, puis crée l'extension `pg_stat_statements`, les rôles,
+   les schémas `immo`, `immo_staging` et `app`, les tables et la vue. Il peut être rejoué sans risque : il
    ne supprime ni ne modifie aucune donnée.
 
 3. **Exiger un mot de passe pour les connexions locales**. Sur un volume neuf, l'image officielle
@@ -118,6 +132,15 @@ DATAIA_project/
    ```powershell
    .\scripts\load.ps1
    ```
+
+4. **Créer la vue matérialisée** des prix au m² (quelques secondes, 4 219 lignes) :
+
+   ```powershell
+   .\scripts\create-mat-view.ps1
+   ```
+
+5. **Lancer l'application** (`http://127.0.0.1:8000/docs`) : `docker compose up -d --build backend`.
+   Tests : voir [backend/README.md](backend/README.md).
 
 Fonctionnement : chaque fichier est lu par `COPY` dans une table de transit de `immo_staging`,
 toutes colonnes en texte. L'option `HEADER MATCH` refuse un fichier dont l'en-tête aurait changé.
@@ -163,7 +186,8 @@ Code de sortie : 0 si tous les contrôles bloquants sont OK, sinon une erreur. L
 aussi un statut `ATTENTION`, signalé sans faire échouer la vérification ; aucun contrôle ne
 l'utilise actuellement.
 
-Résultat au 2026-11-14 : 31 OK, 0 échec, 0 ATTENTION.
+Résultat au 2026-11-19 : 38 OK, 0 échec, 0 ATTENTION (dont 7 contrôles du cloisonnement
+entre `analyst_ro` et `app_agent`, le rôle de l'application).
 
 | Colonne | Valeurs nulles | % des lignes |
 |---|---:|---:|
@@ -284,7 +308,9 @@ LIMIT 10;
 Pistes à étudier avec l'agent, toutes soumises à validation humaine : vue matérialisée, index,
 réécriture de la requête.
 
-## La vue v_prix_m2_commune
+## La vue v_prix_m2_commune et sa version matérialisée
+
+### v_prix_m2_commune (vue recalculée)
 
 Prix moyen au m² des appartements, par commune et par année. Règles appliquées :
 
@@ -309,6 +335,34 @@ chiffres ont été recoupés par un calcul indépendant.
 parking » compte deux locaux et est exclue. Sur 2025, **81 133** ventes ont un seul local de type
 appartement, contre **323 194** ventes d'appartement accompagnées d'autres locaux.
 
+### v_prix_m2_commune_mat (vue matérialisée — optimisée)
+
+**Performances mesurées (Phase 2)** :
+
+| Requête | Vue originale | Vue matérialisée | Gain |
+|---|---:|---:|---:|
+| Comptage simple | 5 370 ms | **1,5 ms** | 99,97% (×3 580) |
+| Top 10 communes | 5 871 ms | **0,94 ms** | 99,98% (×6 246) |
+| Une commune (Bordeaux) | 5 254 ms | **0,24 ms** | 99,99% (×21 892) |
+
+La vue matérialisée `v_prix_m2_commune_mat` pré-calcule les résultats de `v_prix_m2_commune` pour éliminer
+les recalculs coûteux (scan complet de 3,8M lignes DVF). Les requêtes passent de **5-50 secondes** à **<1 ms**.
+
+**Trade-off** : les données sont figées jusqu'au prochain `REFRESH MATERIALIZED VIEW`. Pour DVF 2025
+(année complète), ce n'est pas un problème. Après chargement d'une nouvelle année :
+
+```sql
+-- En tant que immo_admin
+REFRESH MATERIALIZED VIEW immo.v_prix_m2_commune_mat;
+```
+
+**Index créés** :
+- `(code_commune, annee)` : requêtes filtrées par commune
+- `(annee)` : requêtes par année
+- `(annee, prix_m2_moyen DESC) WHERE nb_ventes >= 100` : top N communes
+
+La vue originale `v_prix_m2_commune` reste disponible pour recalculs ponctuels ou validation.
+
 ## Codes orphelins
 
 Il n'y a pas de clé étrangère entre `dvf_mutations` et `insee_communes`. Les codes DVF absents du
@@ -319,9 +373,12 @@ automatiquement.
 |---|---|---:|---|
 | 97127 | Saint Martin | 646 | Collectivité d'outre-mer : le COG des collectivités n'est volontairement pas chargé |
 | 97123 | Saint Barthelemy (Ile) | 160 | Même cas |
-| 44219 | Vritz | 4 | À identifier, probablement une ancienne commune fusionnée |
-| 49069 | Oree D Anjou | 2 | À identifier |
-| 49144 | Freigne | 1 | À identifier, probablement une ancienne commune fusionnée |
+| **44219** | **Vritz** | 4 | **Fusionné le 01/01/2018** dans Vallons-de-l'Erdre (44180) |
+| **49069** | **Orée d'Anjou** | 2 | **Code changé le 01/01/2025** en 49126 (commune fusionnée créée en 2015) |
+| **49144** | **Freigné** | 1 | **Changement de département le 01/01/2018** (49 → 44, code 44225), puis fusion le même jour dans Vallons-de-l'Erdre (44180) |
+
+**Phase 2** : les 3 codes en gras ont été identifiés via `v_mvt_commune_2026.csv` (COG mouvements).
+Ces ventes datent de mars à juillet 2025, après les changements : DVF y garde des codes communaux périmés.
 
 Pour garder ces lignes dans une jointure, utiliser `LEFT JOIN insee_communes`. Détails dans
 [docs/sources.md](docs/sources.md#codes-dvf-hors-référentiel).
@@ -338,7 +395,8 @@ Résumé. Le détail, les vérifications et l'historique sont dans [docs/securit
 |---|---|---|
 | `postgres` | oui (compte d'initialisation) | extension, rôles, schémas uniquement |
 | `immo_admin` | **non** | propriétaire de `immo` et `immo_staging`, chargement (`pg_read_server_files`) |
-| `analyst_ro` | non | agent : `SELECT` sur `immo` uniquement, aucune création (même temporaire), timeout de 30 s, lecture seule par défaut, `pg_stat_statements` |
+| `analyst_ro` | non | agent : `SELECT` sur `immo` uniquement, aucune création (même temporaire), timeout de 30 s, lecture seule par défaut, `pg_stat_statements` ; **aucun accès au schéma `app`** |
+| `app_agent` | non | application : lecture et écriture des lignes de `app.users`, `app.sessions` et `app.historique` uniquement ; aucun accès à `immo`, aucune création |
 
 - Aucun mot de passe dans le code : tout vient de `.env`, qui n'est pas versionné. Les scripts
   transmettent le mot de passe à psql par `PGPASSWORD`, jamais sur la ligne de commande.
@@ -348,23 +406,28 @@ Résumé. Le détail, les vérifications et l'historique sont dans [docs/securit
 - Port publié uniquement sur `127.0.0.1` ; `data/raw` et `sql` montés en lecture seule.
 - `pg_read_server_files`, accordé à `immo_admin`, reste un **droit sensible** : il permet de lire
   n'importe quel fichier accessible au serveur PostgreSQL.
+- Application : mots de passe hachés argon2id ; session côté serveur de 8 h (cookie `HttpOnly`,
+  `SameSite=Strict`, seule l'empreinte SHA-256 du jeton est stockée) ; blocage de 15 min après
+  5 échecs ; historique filtré sur l'utilisateur de la session.
 - `init: true` dans `docker-compose.yml` : un vrai processus init récupère les processus
   orphelins du conteneur. Voir l'incident du 2026-11-13 dans `docs/securite.md`.
 
 ## Limites connues
 
-- **La vue ne retient que les ventes avec un seul local.** `v_prix_m2_commune` exclut toute vente
+- **La vue stricte ne retient que les ventes avec un seul local.** `v_prix_m2_commune` exclut toute vente
   qui comporte, en plus de l'appartement, un autre local : dépendance (cave, parking), maison ou
   local commercial. Cela écarte **environ 80 % des ventes d'appartements** : sur 2025, 323 194
-  ventes d'appartement avec d'autres locaux, contre 81 133 avec un seul local. Les prix moyens
-  portent donc sur un sous-ensemble de ventes « simples ». Une variante qui ignorerait les
-  dépendances reste à décider.
-- **La vue est lente : entre 15 et 55 s selon la requête.** Elle recalcule l'agrégat sur les
-  3,8 millions de lignes DVF à chaque appel, même avec un filtre sur une commune. Le top 10 des
-  communes les plus chères a dépassé le `statement_timeout` de 30 s d'`analyst_ro` (annulé à
-  31,1 s), et la jointure avec la population a pris jusqu'à 55,3 s. Pour exécuter ces requêtes,
-  fixez d'abord `SET statement_timeout = '120s';` pour la session. Voir
-  [Requêtes lentes](#requêtes-lentes--cas-détude-pour-lagent).
+  ventes d'appartement avec d'autres locaux (principalement +Dépendance), contre 81 133 avec un seul local.
+  
+  **Solution alternative disponible** : `sql/05_view_alternative_coverage.sql` définit `v_prix_m2_commune_large`
+  qui ignore les dépendances dans le comptage des locaux. **Trade-off** :
+  - ➕ Couverture : passe de 72 057 à 355 024 ventes retenues après filtre de prix (×4,9), et de 4 219 à 6 937 communes (mesuré le 19/11/2026)
+  - ➖ Précision : le prix au m² inclut la valeur totale (appartement + dépendances) / surface appartement seul
+  
+  **Non créée par défaut** — exécutez `sql/05_view_alternative_coverage.sql` en tant que `immo_admin` pour l'activer.
+- **Performances de la vue originale : 5-50 s par requête** (**RÉSOLU en Phase 2**). La vue `v_prix_m2_commune`
+  recalcule l'agrégat sur 3,8M lignes à chaque appel. **Solution déployée** : vue matérialisée `v_prix_m2_commune_mat`
+  avec index — requêtes en moins de 2 ms (gain >99 %). Voir [v_prix_m2_commune_mat](#v_prix_m2_commune_mat-vue-matérialisée--optimisée).
 - **Les codes orphelins sont documentés, pas corrigés.** 5 codes DVF (813 lignes en 2025) sont
   absents du référentiel INSEE. Ils sont expliqués dans [Codes orphelins](#codes-orphelins) et
   [docs/sources.md](docs/sources.md#codes-dvf-hors-référentiel), et listés à chaque exécution de
@@ -375,4 +438,6 @@ Résumé. Le détail, les vérifications et l'historique sont dans [docs/securit
 
 - **Volume neuf** : la configuration `scram-sha-256` des connexions locales est à refaire (voir
   [Installation](#installation), étape 3).
-- **Codes 44219, 49069, 49144** : leur origine reste à confirmer avec `v_mvt_commune_2026` (COG).
+- ~~**Codes 44219, 49069, 49144**~~ : **RÉSOLU en Phase 2** — identifiés via `v_mvt_commune_2026.csv`.
+- **Agent et écrans** : outils en lecture seule, traduction question → SQL et pages HTML restent
+  à faire (calendrier de la fiche de cadrage, section 7).
