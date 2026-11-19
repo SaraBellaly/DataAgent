@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health, history, users
+from app.api.routes import agent, auth, health, history, users
 from app.core.config import settings
 from app.db.connection import close_pools, open_pools
 
@@ -50,8 +50,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(history.router)
-# Agent (outils en lecture seule, question -> SQL) : à brancher à l'étape suivante
-# app.include_router(agent.router)
+app.include_router(agent.router)
 
 
 @app.exception_handler(Exception)

@@ -57,6 +57,10 @@ services:
       ANALYST_RO_PASSWORD: "${ANALYST_RO_PASSWORD:?ANALYST_RO_PASSWORD manquant}"
       APP_AGENT_PASSWORD: "${APP_AGENT_PASSWORD:?APP_AGENT_PASSWORD manquant}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # Modèle de l'agent (clé jamais versionnée)
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.groq.com/openai/v1}"
+      LLM_MODEL: "${LLM_MODEL:-openai/gpt-oss-120b}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
       LOG_LEVEL: "INFO"
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"

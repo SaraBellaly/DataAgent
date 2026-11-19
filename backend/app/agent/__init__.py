@@ -1,0 +1,1 @@
+"""Agent : vérification du SQL, outils en lecture seule, client du modèle, boucle d'appel d'outils."""

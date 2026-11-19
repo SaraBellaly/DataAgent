@@ -106,12 +106,12 @@ def revoke_session(conn: Connection, token_hash: bytes) -> None:
 # ---------------------------------------------------------------------------
 # Historique (toujours filtré sur user_id)
 # ---------------------------------------------------------------------------
-def add_history(conn: Connection, user_id: int, question: str,
-                sql_propose: str | None, explication: str | None) -> int:
+def add_history(conn: Connection, user_id: int, question: str, sql_propose: str | None,
+                explication: str | None, recommandations: list[str] | None = None) -> int:
     (history_id,) = conn.execute(
-        "INSERT INTO app.historique (user_id, question, sql_propose, explication) "
-        "VALUES (%s, %s, %s, %s) RETURNING id",
-        (user_id, question, sql_propose, explication),
+        "INSERT INTO app.historique (user_id, question, sql_propose, explication, recommandations) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (user_id, question, sql_propose, explication, recommandations or []),
     ).fetchone()
     return history_id
 
@@ -119,7 +119,7 @@ def add_history(conn: Connection, user_id: int, question: str,
 def list_history(conn: Connection, user_id: int, limit: int, offset: int = 0) -> list[dict[str, Any]]:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT id, question, sql_propose, explication, created_at FROM app.historique "
+            "SELECT id, question, sql_propose, explication, recommandations, created_at FROM app.historique "
             "WHERE user_id = %s ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
             (user_id, limit, offset),
         )
@@ -129,7 +129,7 @@ def list_history(conn: Connection, user_id: int, limit: int, offset: int = 0) ->
 def get_history_item(conn: Connection, user_id: int, history_id: int) -> dict[str, Any] | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT id, question, sql_propose, explication, created_at FROM app.historique "
+            "SELECT id, question, sql_propose, explication, recommandations, created_at FROM app.historique "
             "WHERE id = %s AND user_id = %s",
             (history_id, user_id),
         )

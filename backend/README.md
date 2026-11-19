@@ -17,7 +17,43 @@ Elle suit la fiche de cadrage (`Bellaly-Atata_Projet11.md`, sections 3, 5 et 6).
 | Deux rôles cloisonnés | `analyst_ro` (outils de l'agent) n'a aucun accès au schéma `app`. `app_agent` (application) n'a aucun accès à `immo` et ne peut pas modifier la structure |
 | Requêtes paramétrées | psycopg 3 (`%s`), aucune concaténation de valeurs dans le SQL (`app/repositories/__init__.py`) |
 
-Les écrans et l'agent sont les étapes suivantes. La route `app/api/routes/agent.py` n'est pas encore branchée.
+## Agent (Bloc 3)
+
+Le modèle est appelé par une API compatible OpenAI, choisie dans `.env` : Groq
+`openai/gpt-oss-120b` par défaut, ou Ollama en local (`LLM_BASE_URL=http://localhost:11434/v1`).
+Aucun framework d'agent n'est utilisé : la boucle d'appel d'outils est dans `app/agent/orchestrator.py`.
+
+| Route | Rôle |
+|---|---|
+| `POST /api/agent/questions` | L'agent propose un SQL, une explication et des recommandations. **Rien n'est exécuté** ; l'échange est enregistré dans l'historique |
+| `POST /api/agent/questions/{id}/execution` | Validation par l'utilisateur : exécution sous `analyst_ro`, 200 lignes au plus |
+| `GET /api/agent/questions/{id}/plan?analyze=false` | Plan `EXPLAIN`. `analyze=true` exécute la requête : seulement sur demande de l'utilisateur |
+
+**Outils du modèle**, tous en lecture seule sous `analyst_ro` :
+- `lire_schema` : tables, vues (y compris matérialisées), colonnes et index existants ;
+- `chercher_commune` : nom vers code INSEE, pour ne pas inventer de code ;
+- `requetes_couteuses` : `pg_stat_statements` ;
+- `expliquer_requete` : `EXPLAIN` sans exécution ;
+- `repondre` : réponse finale.
+
+Le modèle **n'a pas d'outil d'exécution** : seule la route de validation exécute une requête.
+
+**Garde-fous** :
+- **Vérification du SQL proposé** (`app/agent/sql_guard.py`) : une seule instruction `SELECT`, analysée par `sqlglot` et non par des expressions régulières. Elle refuse les écritures, les CTE qui modifient des données, `SELECT INTO`, `FOR UPDATE`, les fonctions `pg_*`, `dblink` ou `set_config`, et toute relation hors du schéma `immo`. Le SQL est ensuite testé par `EXPLAIN`, sans être exécuté : une colonne inventée est renvoyée au modèle pour correction.
+- **Nouvelle vérification avant chaque exécution**, dans une transaction `READ ONLY`, avec une limite de 30 s.
+- **Réponses en texte** : quand le modèle répond en Markdown au lieu d'appeler `repondre` (fréquent avec gpt-oss, et refusé par Groq sous le code `tool_use_failed`), le bloc ```` ```sql ```` est extrait puis soumis aux mêmes vérifications.
+- **Contexte** : seuls les 4 derniers échanges de l'utilisateur sont envoyés, rejoués comme des appels à `repondre`.
+- **Limites** : 6 appels au modèle par question, résultats d'outils tronqués à 3 500 caractères.
+- **Indisponibilité du modèle** (429, clé refusée, réseau) : réponse 503 avec un message clair, et rien n'est enregistré dans l'historique.
+
+**Coût en tokens** (plan gratuit Groq : 8 000 tokens par minute et 1 000 requêtes par jour) : de 3 000 à
+6 000 tokens par question. Sur une erreur 429, le client attend le délai annoncé par Groq,
+jusqu'à 2 fois.
+
+Tests : `pytest` en lance 111 sans appel au modèle (faux client). Le parcours réel s'obtient avec
+`RUN_LLM_TESTS=1 pytest -m llm` : 10 questions de référence (3 types de la fiche, suivi, diagnostic, hors périmètre, suppression, injection) ; environ 5 min 30 s sur le plan gratuit Groq (attentes de limite de débit comprises).
+
+L'interface React est l'étape suivante.
 
 ## Organisation
 
@@ -29,12 +65,13 @@ backend/
 │   ├── core/security.py        # argon2id, jetons de session
 │   ├── db/connection.py        # pools psycopg : analyst_ro et app_agent
 │   ├── repositories/           # SQL paramétré sur le schéma app
+│   ├── agent/                  # vérification du SQL, outils, client du modèle, boucle de l'agent
 │   ├── services/               # inscription, connexion et blocage, déconnexion, suppression
 │   ├── schemas/                # validation Pydantic
 │   └── api/
 │       ├── deps.py             # cookie et utilisateur courant
-│       └── routes/             # health, auth, users, history (agent : à venir)
-└── tests/                      # pytest sur la base réelle (31 tests)
+│       └── routes/             # health, auth, users, history, agent
+└── tests/                      # pytest : 111 tests sans modèle, 10 tests réels (-m llm)
 ```
 
 Côté base, le schéma `app` est créé par `sql/01_roles.sql` (rôle `app_agent`) et par
@@ -51,7 +88,7 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python -m uvicorn app.main:app --reload     # http://127.0.0.1:8000/docs
-.\.venv\Scripts\python -m pytest                            # 31 tests
+.\.venv\Scripts\python -m pytest                            # 111 tests (sans appel au modèle)
 ```
 
 Avec Docker : `docker compose up -d --build backend` publie l'application sur

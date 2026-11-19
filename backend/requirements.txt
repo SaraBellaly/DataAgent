@@ -14,6 +14,10 @@ email-validator==2.1.0.post1
 # Hachage des mots de passe (argon2id)
 argon2-cffi==25.1.0
 
+# Agent : client compatible OpenAI (Groq, Ollama…) et analyse du SQL généré
+openai==3.56.0
+sqlglot==30.33.0
+
 # Tests
 pytest==9.2.0
 httpx==0.28.1

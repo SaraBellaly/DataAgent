@@ -60,13 +60,17 @@ CREATE TABLE IF NOT EXISTS app.historique (
     question    text        NOT NULL,
     sql_propose text,
     explication text,
+    recommandations text[] NOT NULL DEFAULT '{}',
     created_at  timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT historique_question_non_vide CHECK (length(btrim(question)) > 0)
 );
 CREATE INDEX IF NOT EXISTS historique_user_date_idx ON app.historique (user_id, created_at DESC);
+-- Base créée avant l'ajout de la colonne (19/11/2026)
+ALTER TABLE app.historique ADD COLUMN IF NOT EXISTS recommandations text[] NOT NULL DEFAULT '{}';
 
 COMMENT ON TABLE  app.historique             IS 'Échanges de chaque utilisateur ; lus toujours filtrés sur l''utilisateur de la session';
-COMMENT ON COLUMN app.historique.sql_propose IS 'SQL proposé par l''agent (une seule instruction SELECT)';
+COMMENT ON COLUMN app.historique.sql_propose IS 'SQL proposé par l''agent (une seule instruction SELECT), exécuté seulement après validation';
+COMMENT ON COLUMN app.historique.recommandations IS 'Index ou réécritures suggérés par l''agent, jamais appliqués automatiquement';
 
 -- ---------------------------------------------------------------------------
 -- Droits : app_agent lit et écrit les lignes, sans TRUNCATE ni droit sur la structure

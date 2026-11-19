@@ -8,7 +8,7 @@ Dans le conteneur, docker-compose.yml fournit les variables (POSTGRES_HOST=db, e
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -44,6 +44,20 @@ class Settings(BaseSettings):
     max_failed_logins: int = 5
     lockout_minutes: int = 15
 
+    # Modèle de l'agent : toute API compatible OpenAI (Groq par défaut, Ollama en local…)
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
+    llm_api_key: SecretStr = SecretStr("")
+    llm_timeout_seconds: float = 60.0
+    llm_max_output_tokens: int = 1500
+    llm_tool_choice: str = "auto"      # « required » force un outil, mais gpt-oss répond alors parfois en texte refusé
+    llm_max_retries: int = 2           # 429 : attend le délai annoncé par le fournisseur avant de renoncer
+
+    # Maîtrise des tokens (plan gratuit Groq : 8 000 tokens/min) et du comportement de l'agent
+    agent_max_steps: int = 6             # appels au modèle par question
+    agent_history_turns: int = 4         # échanges récents de l'utilisateur renvoyés en contexte
+    agent_max_tool_chars: int = 3500     # taille maximale d'un résultat d'outil envoyé au modèle
+    agent_max_result_rows: int = 200     # lignes renvoyées à l'utilisateur après validation
 
     model_config = SettingsConfigDict(
         env_file=(_ROOT_ENV, _BACKEND_ENV),
