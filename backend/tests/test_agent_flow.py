@@ -137,11 +137,12 @@ def test_trop_d_etapes(user, use_llm):
     assert r.status_code == 502 and history_count(user) == before
 
 
-def test_historique_de_l_utilisateur_envoye_en_contexte(user, use_llm):
+def test_historique_de_la_conversation_envoye_en_contexte(user, use_llm):
     use_llm(FakeLLM({"tool_calls": [call("repondre", explication="Bordeaux.", sql_propose=SQL_BORDEAUX)]}))
-    user.post("/api/agent/questions", json={"question": "Prix au m² à Bordeaux ?"})
+    conversation_id = user.post("/api/agent/questions",
+                                json={"question": "Prix au m² à Bordeaux ?"}).json()["conversation_id"]
     fake = use_llm(FakeLLM({"tool_calls": [call("repondre", explication="Toulouse.")]}))
-    user.post("/api/agent/questions", json={"question": "et Toulouse ?"})
+    user.post("/api/agent/questions", json={"question": "et Toulouse ?", "conversation_id": conversation_id})
     contents = [m.get("content") for m in fake.received[0]]
     assert "Prix au m² à Bordeaux ?" in contents and contents[-1] == "et Toulouse ?"
     # La réponse passée est rejouée comme un appel à repondre, suivi de son résultat d'outil

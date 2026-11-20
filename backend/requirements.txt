@@ -10,6 +10,7 @@ psycopg-pool==3.3.3
 pydantic==2.12.5
 pydantic-settings==2.14.2
 email-validator==2.1.0.post1
+python-multipart==0.0.34   # envoi de fichiers audio (voix -> texte)
 
 # Hachage des mots de passe (argon2id)
 argon2-cffi==25.1.0

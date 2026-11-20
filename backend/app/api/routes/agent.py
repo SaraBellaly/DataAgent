@@ -9,6 +9,7 @@ L'échange est toujours relu dans l'historique de l'utilisateur de la session : 
 valider que SA requête, et jamais un SQL envoyé directement par le navigateur.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
 
 from app import repositories as repo
 from app.agent import orchestrator, tools
@@ -28,18 +29,24 @@ ERRORS = {401: {"model": Message}, 404: {"model": Message}, 422: {"model": Messa
 @router.post("/questions", response_model=AgentAnswerOut, responses=ERRORS)
 def ask_question(body: QuestionRequest, user: dict = Depends(get_current_user),
                  llm: ChatClient = Depends(get_llm_client)):
+    if body.conversation_id is not None:
+        with pool_app.connection() as conn:
+            if repo.get_conversation(conn, user["id"], body.conversation_id) is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation introuvable.")
     try:
-        answer = orchestrator.ask(user["id"], body.question, llm)
+        answer = orchestrator.ask(user["id"], body.question, llm, body.conversation_id)
     except LLMUnavailable as e:
         headers = {"Retry-After": str(e.retry_after)} if e.retry_after else None
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e), headers=headers) from None
     except orchestrator.AgentFailed as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from None
-    return AgentAnswerOut(history_id=answer.history_id, question=answer.question,
+    return AgentAnswerOut(history_id=answer.history_id, conversation_id=answer.conversation_id,
+                          question=answer.question,
                           sql_propose=answer.sql_propose, explication=answer.explication,
                           recommandations=answer.recommandations, etapes=answer.etapes,
                           diagnostic_performance=answer.diagnostic_performance,
-                          duree_modele_ms=answer.duree_modele_ms, duree_base_ms=answer.duree_base_ms)
+                          duree_modele_ms=answer.duree_modele_ms, duree_base_ms=answer.duree_base_ms,
+                          modele=answer.modele, modele_secours=answer.modele_secours)
 
 
 def _own_sql(user_id: int, history_id: int) -> str:
@@ -57,9 +64,13 @@ def execute_validated(history_id: int, user: dict = Depends(get_current_user)):
     """Exécution après validation explicite de l'utilisateur (bouton « Valider et exécuter »)."""
     sql = _own_sql(user["id"], history_id)
     try:
-        return tools.execute_select(sql, max_rows=settings.agent_max_result_rows)
+        result = tools.execute_select(sql, max_rows=settings.agent_max_result_rows)
     except (SqlRejected, tools.ToolError) as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
+    result = jsonable_encoder(result)   # dates, décimaux… -> JSON
+    with pool_app.connection() as conn:
+        repo.save_result(conn, user["id"], history_id, result)
+    return result
 
 
 @router.get("/questions/{history_id}/plan", response_model=PlanOut, responses=ERRORS)

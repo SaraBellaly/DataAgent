@@ -131,9 +131,9 @@ FROM (VALUES
         EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = 'app' AND c.relkind = 'r'
                   AND has_table_privilege('app_agent', c.oid, 'TRUNCATE'))),
-    ('app_agent : écriture sur users, sessions, historique', true,
-        (SELECT count(*) = 3 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'app' AND c.relname IN ('users', 'sessions', 'historique')
+    ('app_agent : écriture sur les 4 tables de app',      true,
+        (SELECT count(*) = 4 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'app' AND c.relname IN ('users', 'sessions', 'historique', 'conversations')
            AND has_table_privilege('app_agent', c.oid, 'SELECT, INSERT, UPDATE, DELETE')))
 ) AS c(controle, attendu, obtenu)
 \gset

@@ -42,6 +42,9 @@ class AgentAnswer:
     diagnostic_performance: str | None = None   # fiche, 5.1 : diagnostic si la requête est lente
     duree_modele_ms: float = 0.0                # fiche, Q13 : temps du modèle…
     duree_base_ms: float = 0.0                  # … séparé de celui de la base (outils, EXPLAIN)
+    conversation_id: int | None = None
+    modele: str | None = None          # modèle qui a produit la réponse finale
+    modele_secours: bool = False       # True si le modèle principal était épuisé
 
 
 @dataclass
@@ -51,6 +54,9 @@ class _Run:
     tokens: int = 0
     llm_ms: float = 0.0
     db_ms: float = 0.0
+    conversation_id: int | None = None
+    model: str | None = None
+    fallback: bool = False
 
     def timed_db(self, fn: Callable[[], Any]) -> Any:
         start = time.perf_counter()
@@ -79,16 +85,19 @@ _TOOL_HANDLERS: dict[str, Callable[[dict[str, Any]], str]] = {
 }
 
 
-def _history_context(user_id: int) -> list[dict[str, Any]]:
-    """Échanges récents de l'utilisateur, du plus ancien au plus récent.
+def _history_context(user_id: int, conversation_id: int | None) -> list[dict[str, Any]]:
+    """Échanges récents de la conversation en cours (de CET utilisateur), du plus ancien au plus récent.
+    Une nouvelle conversation part sans contexte.
 
     Chaque réponse passée est rejouée sous sa forme réelle, un appel à l'outil repondre :
     présentée en texte libre, elle incitait le modèle à répondre lui aussi en texte, sans
     outil (refusé par Groq : tool_use_failed, constaté sur « et à Toulouse ? »)."""
+    if conversation_id is None:
+        return []
     with pool_app.connection() as conn:
-        items = repo.list_history(conn, user_id, settings.agent_history_turns)
+        items = repo.conversation_history(conn, user_id, conversation_id, last=settings.agent_history_turns)
     messages: list[dict[str, Any]] = []
-    for item in reversed(items):
+    for item in items:
         call_id = f"historique_{item['id']}"
         args = {"explication": (item["explication"] or "")[:500]}
         if item["sql_propose"]:
@@ -140,12 +149,14 @@ def _validate_final_sql(sql: str | None, run: _Run) -> tuple[str | None, str | N
     return checked.sql, tools.performance_diagnosis(checked.sql, plan)
 
 
-def ask(user_id: int, question: str, llm: ChatClient) -> AgentAnswer:
+def ask(user_id: int, question: str, llm: ChatClient, conversation_id: int | None = None) -> AgentAnswer:
+    """conversation_id : conversation à poursuivre (son appartenance à l'utilisateur est vérifiée
+    par l'appelant) ; None crée une conversation, intitulée d'après la question, au premier succès."""
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages += _history_context(user_id)
+    messages += _history_context(user_id, conversation_id)
     messages.append({"role": "user", "content": question})
 
-    run = _Run()
+    run = _Run(conversation_id=conversation_id)
     reminded = False
     for _ in range(settings.agent_max_steps):
         start = time.perf_counter()
@@ -154,6 +165,8 @@ def ask(user_id: int, question: str, llm: ChatClient) -> AgentAnswer:
         finally:
             run.llm_ms += (time.perf_counter() - start) * 1000
         run.tokens += reply.get("usage") or 0
+        run.model = reply.get("model") or run.model
+        run.fallback = run.fallback or bool(reply.get("fallback"))
         calls = reply.get("tool_calls") or []
 
         if not calls:
@@ -239,8 +252,14 @@ def _tool_message(call: dict[str, Any], content: str) -> dict[str, Any]:
 def _save(user_id: int, question: str, sql: str | None, explanation: str,
           recos: list[str], diagnosis: str | None, run: _Run) -> AgentAnswer:
     with pool_app.connection() as conn:
-        history_id = repo.add_history(conn, user_id, question, sql, explanation, recos)
-    logger.info("Question traitée : %d étapes, %s tokens, modèle %.0f ms, base %.0f ms, SQL=%s",
-                len(run.steps), run.tokens or "?", run.llm_ms, run.db_ms, bool(sql))
+        # Conversation créée seulement en cas de succès : un échec n'enregistre rien (fiche, Q10)
+        if run.conversation_id is None:
+            run.conversation_id = repo.create_conversation(conn, user_id, question)
+        history_id = repo.add_history(conn, user_id, question, sql, explanation, recos, run.conversation_id)
+        repo.touch_conversation(conn, user_id, run.conversation_id)
+    logger.info("Question traitée par %s%s : %d étapes, %s tokens, modèle %.0f ms, base %.0f ms, SQL=%s",
+                run.model or "?", " (secours)" if run.fallback else "", len(run.steps), run.tokens or "?",
+                run.llm_ms, run.db_ms, bool(sql))
     return AgentAnswer(history_id, question, sql, explanation, recos, run.steps, run.tokens or None,
-                       diagnosis, round(run.llm_ms, 1), round(run.db_ms, 1))
+                       diagnosis, round(run.llm_ms, 1), round(run.db_ms, 1), run.conversation_id,
+                       run.model, run.fallback)

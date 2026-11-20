@@ -47,11 +47,19 @@ class Settings(BaseSettings):
     # Modèle de l'agent : toute API compatible OpenAI (Groq par défaut, Ollama en local…)
     llm_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
+    # Modèles de secours, essayés dans l'ordre quand le quota du principal est épuisé (même fournisseur, même clé)
+    llm_fallback_models: list[str] = ["openai/gpt-oss-20b"]
     llm_api_key: SecretStr = SecretStr("")
     llm_timeout_seconds: float = 60.0
     llm_max_output_tokens: int = 1500
     llm_tool_choice: str = "auto"      # « required » force un outil, mais gpt-oss répond alors parfois en texte refusé
     llm_max_retries: int = 2           # 429 : attend le délai annoncé par le fournisseur avant de renoncer
+
+    # Voix -> texte (Whisper sur Groq par défaut ; même clé que le modèle)
+    stt_base_url: str = ""              # vide : même fournisseur que LLM_BASE_URL
+    stt_model: str = "whisper-large-v3"
+    stt_language: str = "fr"
+    stt_max_bytes: int = 10_000_000     # environ 10 minutes d'audio compressé
 
     # Maîtrise des tokens (plan gratuit Groq : 8 000 tokens/min) et du comportement de l'agent
     agent_max_steps: int = 6             # appels au modèle par question

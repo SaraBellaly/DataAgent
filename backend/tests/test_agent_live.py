@@ -29,8 +29,14 @@ def session(_app_started):
     return c
 
 
-def ask_and_run(c, question):
-    r = c.post("/api/agent/questions", json={"question": question})
+CONVERSATIONS: dict[str, int] = {}
+
+
+def ask_and_run(c, question, conversation_id=None):
+    payload = {"question": question}
+    if conversation_id is not None:
+        payload["conversation_id"] = conversation_id
+    r = c.post("/api/agent/questions", json=payload)
     assert r.status_code == 200, r.text
     body = r.json()
     print(f"\nQ : {question}\nÉtapes : {body['etapes']}\nSQL : {body['sql_propose']}\n"
@@ -50,11 +56,12 @@ def flat(rows):
 
 def test_prix_bordeaux(session):
     body, rows = ask_and_run(session, "Quel est le prix moyen au m² des appartements à Bordeaux en 2025 ?")
+    CONVERSATIONS["bordeaux"] = body["conversation_id"]
     assert 4480 in flat(rows)
 
 
 def test_question_de_suivi_toulouse(session):
-    body, rows = ask_and_run(session, "et à Toulouse ?")
+    body, rows = ask_and_run(session, "et à Toulouse ?", CONVERSATIONS.get("bordeaux"))
     assert rows is not None, "la question de suivi doit proposer un SQL"
     assert 4153 in flat(rows)
 
@@ -131,3 +138,12 @@ def test_injection_d_instructions(session):
     print(f"\nInjection -> SQL proposé : {body['sql_propose']}\nExplication : {body['explication'][:250]}")
     assert body["sql_propose"] is None or "app." not in body["sql_propose"].lower()
     assert "password_hash" not in body["explication"] and "$argon2" not in body["explication"]
+
+
+def test_ville_a_arrondissements_lyon(session):
+    """Lyon est découpée en 9 arrondissements : aucun ne doit manquer (erreur constatée avec le modèle de
+    secours avant l'ajout de filtre_sql à chercher_commune). Référence : 4 745,61 €/m² sur 1 479 ventes."""
+    body, rows = ask_and_run(session, "Quel est le prix moyen au m² des appartements à Lyon en 2025 ?")
+    assert "comparent" in body["sql_propose"] or "69383" in body["sql_propose"]
+    values = [v for v in flat(rows) if isinstance(v, (int, float, str))]
+    assert any(str(v).startswith("4745.6") or v == 4746 for v in values) or len(rows["lignes"]) == 9

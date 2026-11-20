@@ -32,3 +32,11 @@ def get_my_history_item(history_id: int, user: dict = Depends(get_current_user))
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Introuvable.")
     return item
+
+
+@router.delete("/{history_id}", status_code=status.HTTP_204_NO_CONTENT,
+               responses={401: {"model": Message}, 404: {"model": Message}})
+def delete_my_history_item(history_id: int, user: dict = Depends(get_current_user)):
+    with pool_app.connection() as conn:
+        if not repo.delete_history_item(conn, user["id"], history_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Introuvable.")

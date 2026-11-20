@@ -9,6 +9,7 @@ from typing import Any
 
 from psycopg import Connection
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +107,17 @@ def revoke_session(conn: Connection, token_hash: bytes) -> None:
 # ---------------------------------------------------------------------------
 # Historique (toujours filtré sur user_id)
 # ---------------------------------------------------------------------------
+_HISTORY_COLUMNS = ("id, conversation_id, question, sql_propose, explication, recommandations, "
+                    "resultat, executed_at, created_at")
+
+
 def add_history(conn: Connection, user_id: int, question: str, sql_propose: str | None,
-                explication: str | None, recommandations: list[str] | None = None) -> int:
+                explication: str | None, recommandations: list[str] | None = None,
+                conversation_id: int | None = None) -> int:
     (history_id,) = conn.execute(
-        "INSERT INTO app.historique (user_id, question, sql_propose, explication, recommandations) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (user_id, question, sql_propose, explication, recommandations or []),
+        "INSERT INTO app.historique (user_id, question, sql_propose, explication, recommandations, conversation_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (user_id, question, sql_propose, explication, recommandations or [], conversation_id),
     ).fetchone()
     return history_id
 
@@ -119,7 +125,7 @@ def add_history(conn: Connection, user_id: int, question: str, sql_propose: str 
 def list_history(conn: Connection, user_id: int, limit: int, offset: int = 0) -> list[dict[str, Any]]:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT id, question, sql_propose, explication, recommandations, created_at FROM app.historique "
+            f"SELECT {_HISTORY_COLUMNS} FROM app.historique "
             "WHERE user_id = %s ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
             (user_id, limit, offset),
         )
@@ -128,9 +134,101 @@ def list_history(conn: Connection, user_id: int, limit: int, offset: int = 0) ->
 
 def get_history_item(conn: Connection, user_id: int, history_id: int) -> dict[str, Any] | None:
     with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(f"SELECT {_HISTORY_COLUMNS} FROM app.historique WHERE id = %s AND user_id = %s",
+                    (history_id, user_id))
+        return cur.fetchone()
+
+
+def delete_history_item(conn: Connection, user_id: int, history_id: int) -> bool:
+    cur = conn.execute("DELETE FROM app.historique WHERE id = %s AND user_id = %s", (history_id, user_id))
+    return cur.rowcount == 1
+
+
+def save_result(conn: Connection, user_id: int, history_id: int, result: dict[str, Any]) -> None:
+    """Conserve le résultat validé (déjà limité à 200 lignes) pour le relire sans réexécuter."""
+    conn.execute(
+        "UPDATE app.historique SET resultat = %s, executed_at = now() WHERE id = %s AND user_id = %s",
+        (Jsonb(result), history_id, user_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Conversations (toujours filtrées sur user_id)
+# ---------------------------------------------------------------------------
+def create_conversation(conn: Connection, user_id: int, titre: str) -> int:
+    titre = " ".join(titre.split())[:120] or "Nouvelle conversation"
+    (conversation_id,) = conn.execute(
+        "INSERT INTO app.conversations (user_id, titre) VALUES (%s, %s) RETURNING id", (user_id, titre),
+    ).fetchone()
+    return conversation_id
+
+
+def get_conversation(conn: Connection, user_id: int, conversation_id: int) -> dict[str, Any] | None:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
-            "SELECT id, question, sql_propose, explication, recommandations, created_at FROM app.historique "
-            "WHERE id = %s AND user_id = %s",
-            (history_id, user_id),
+            "SELECT c.id, c.titre, c.created_at, c.updated_at, "
+            "       (SELECT count(*) FROM app.historique h WHERE h.conversation_id = c.id) AS nb_echanges "
+            "FROM app.conversations c WHERE c.id = %s AND c.user_id = %s",
+            (conversation_id, user_id),
+        )
+        return cur.fetchone()
+
+
+def list_conversations(conn: Connection, user_id: int, limit: int, offset: int = 0) -> list[dict[str, Any]]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT c.id, c.titre, c.created_at, c.updated_at, "
+            "       (SELECT count(*) FROM app.historique h WHERE h.conversation_id = c.id) AS nb_echanges "
+            "FROM app.conversations c WHERE c.user_id = %s "
+            "ORDER BY c.updated_at DESC, c.id DESC LIMIT %s OFFSET %s",
+            (user_id, limit, offset),
+        )
+        return cur.fetchall()
+
+
+def conversation_history(conn: Connection, user_id: int, conversation_id: int,
+                         last: int | None = None) -> list[dict[str, Any]]:
+    """Échanges d'une conversation, du plus ancien au plus récent (les `last` derniers si précisé)."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            f"SELECT * FROM (SELECT {_HISTORY_COLUMNS} FROM app.historique "
+            "  WHERE user_id = %s AND conversation_id = %s ORDER BY created_at DESC, id DESC LIMIT %s) t "
+            "ORDER BY created_at, id",
+            (user_id, conversation_id, last if last is not None else 10_000),
+        )
+        return cur.fetchall()
+
+
+def touch_conversation(conn: Connection, user_id: int, conversation_id: int) -> None:
+    conn.execute("UPDATE app.conversations SET updated_at = now() WHERE id = %s AND user_id = %s",
+                 (conversation_id, user_id))
+
+
+def rename_conversation(conn: Connection, user_id: int, conversation_id: int, titre: str) -> bool:
+    cur = conn.execute("UPDATE app.conversations SET titre = %s WHERE id = %s AND user_id = %s",
+                       (" ".join(titre.split())[:120], conversation_id, user_id))
+    return cur.rowcount == 1
+
+
+def delete_conversation(conn: Connection, user_id: int, conversation_id: int) -> bool:
+    """ON DELETE CASCADE supprime aussi tous ses échanges."""
+    cur = conn.execute("DELETE FROM app.conversations WHERE id = %s AND user_id = %s", (conversation_id, user_id))
+    return cur.rowcount == 1
+
+
+# ---------------------------------------------------------------------------
+# Tableau de bord (statistiques de l'utilisateur seulement)
+# ---------------------------------------------------------------------------
+def user_stats(conn: Connection, user_id: int) -> dict[str, Any]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT (SELECT count(*) FROM app.conversations WHERE user_id = %(u)s) AS nb_conversations, "
+            "       count(*) AS nb_questions, "
+            "       count(sql_propose) AS nb_requetes_proposees, "
+            "       count(executed_at) AS nb_requetes_executees, "
+            "       count(*) FILTER (WHERE cardinality(recommandations) > 0) AS nb_avec_recommandations, "
+            "       max(created_at) AS derniere_activite "
+            "FROM app.historique WHERE user_id = %(u)s",
+            {"u": user_id},
         )
         return cur.fetchone()

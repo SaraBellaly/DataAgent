@@ -98,3 +98,16 @@ def test_diagnostic_de_performance(_app_started, sql, attendu):
         assert diagnosis is None
     else:
         assert diagnosis.startswith("Requête potentiellement lente") and attendu in diagnosis
+
+
+def test_communes_a_arrondissements_filtre_pret_a_l_emploi(_app_started):
+    """Lyon : le modèle de secours avait oublié le 3e arrondissement en recopiant les codes à la main."""
+    lyon = tools.find_commune("Lyon")[0]
+    assert lyon["code_insee"] == "69123" and lyon["arrondissements"] == 9
+    r = tools.execute_select(
+        "SELECT round(sum(prix_m2_moyen * nb_ventes)::numeric / sum(nb_ventes), 2) FROM v_prix_m2_commune_mat "
+        f"WHERE annee = 2025 AND {lyon['filtre_sql']}")
+    assert float(r["lignes"][0][0]) == 4745.61
+    assert "arrondissements" not in tools.find_commune("Bordeaux")[0]
+    assert tools.find_commune("Paris")[0]["arrondissements"] == 20
+    assert tools.find_commune("Marseille")[0]["arrondissements"] == 16

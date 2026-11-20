@@ -43,8 +43,9 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      # Racine du dépôt : l'image compile aussi l'interface React (frontend/)
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: dataagent_backend
     restart: unless-stopped
     environment:

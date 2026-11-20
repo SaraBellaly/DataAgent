@@ -137,16 +137,33 @@ def find_commune(nom: str, limite: int = 10) -> list[dict[str, Any]]:
     with pool_ro.connection() as conn:
         _read_only(conn, 5_000)
         # Correspondance exacte d'abord, puis par inclusion ; les plus peuplées en premier
+        # nb_arrondissements : Paris, Lyon et Marseille n'ont pas de ventes sous leur propre code,
+        # seulement sous ceux de leurs arrondissements (comparent = code de la commune)
         rows = conn.execute(
-            "SELECT code_insee, typecom, libelle, dep, pmun FROM immo.insee_communes "
-            "WHERE ncc ILIKE %(motif)s OR libelle ILIKE %(motif_libelle)s "
-            "ORDER BY (ncc = %(exact)s) DESC, pmun DESC NULLS LAST LIMIT %(limite)s",
+            "SELECT c.code_insee, c.typecom, c.libelle, c.dep, c.pmun, "
+            "       (SELECT count(*) FROM immo.insee_communes a WHERE a.comparent = c.code_insee AND a.typecom = 'ARM') "
+            "FROM immo.insee_communes c "
+            "WHERE c.ncc ILIKE %(motif)s OR c.libelle ILIKE %(motif_libelle)s "
+            "ORDER BY (c.ncc = %(exact)s) DESC, c.typecom = 'ARM', c.pmun DESC NULLS LAST LIMIT %(limite)s",
             {"motif": f"%{_ncc(nom)}%", "motif_libelle": f"%{nom}%", "exact": _ncc(nom),
              "limite": max(1, min(limite, 20))},
         ).fetchall()
         conn.rollback()
-    return [{"code_insee": r[0], "type": r[1], "libelle": r[2], "departement": r[3], "population": r[4]}
-            for r in rows]
+    result = []
+    for code, typecom, libelle, dep, pmun, nb_arr in rows:
+        item: dict[str, Any] = {"code_insee": code, "type": typecom, "libelle": libelle, "departement": dep, "population": pmun}
+        if nb_arr:
+            # Filtre prêt à l'emploi : évite de recopier (et d'oublier) des codes d'arrondissement
+            item["arrondissements"] = nb_arr
+            item["attention"] = (
+                f"Commune découpée en {nb_arr} arrondissements : les ventes DVF et les prix sont sous les codes des "
+                "arrondissements, jamais sous ce code. Ne liste pas les codes à la main ; utilise exactement ce filtre."
+            )
+            item["filtre_sql"] = (
+                f"code_commune IN (SELECT code_insee FROM immo.insee_communes WHERE comparent = '{code}')"
+            )
+        result.append(item)
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,7 @@ def test_roles_utilises(_app_started):
 
 
 def test_racine_et_health(client):
-    assert client.get("/").json()["status"] == "running"
+    assert client.get("/api").json()["status"] == "running"
     assert client.get("/health").json()["status"] == "healthy"
     db = client.get("/health/db").json()
     assert db["status"] == "connected"

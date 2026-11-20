@@ -50,10 +50,27 @@ Le modèle **n'a pas d'outil d'exécution** : seule la route de validation exéc
 6 000 tokens par question. Sur une erreur 429, le client attend le délai annoncé par Groq,
 jusqu'à 2 fois.
 
-Tests : `pytest` en lance 111 sans appel au modèle (faux client). Le parcours réel s'obtient avec
-`RUN_LLM_TESTS=1 pytest -m llm` : 10 questions de référence (3 types de la fiche, suivi, diagnostic, hors périmètre, suppression, injection) ; environ 5 min 30 s sur le plan gratuit Groq (attentes de limite de débit comprises).
+Tests : `pytest` en lance 130 sans appel au modèle (faux client). Le parcours réel s'obtient avec
+`RUN_LLM_TESTS=1 pytest -m llm` : 11 questions de référence (3 types de la fiche, suivi, Lyon et ses arrondissements, diagnostic, hors périmètre, suppression, injection) ; environ 5 min 30 s sur le plan gratuit Groq (attentes de limite de débit comprises).
 
-L'interface React est l'étape suivante.
+**Modèle de secours** : `LLM_FALLBACK_MODELS` (par défaut `gpt-oss-20b`). Quand le quota du
+modèle principal est épuisé (429 avec un long délai), l'agent bascule aussitôt sur le secours et
+met le principal de côté jusqu'à son rétablissement ; une limite courte est simplement attendue
+(jusqu'à une minute pour le dernier modèle disponible). La réponse indique quel modèle a répondu.
+
+**Communes à arrondissements** : pour Paris, Lyon et Marseille, `chercher_commune` renvoie un
+`filtre_sql` qui inclut tous les arrondissements. Il a été ajouté après qu'un modèle a oublié le
+3ᵉ arrondissement de Lyon en recopiant les codes à la main.
+
+## Autres routes (interface)
+
+| Route | Rôle |
+|---|---|
+| `GET /api/conversations`, `GET`/`PATCH`/`DELETE /api/conversations/{id}` | Conversations de l'utilisateur : liste, détail avec les résultats déjà obtenus, renommage, suppression (avec leurs échanges) |
+| `DELETE /api/history/{id}` | Supprimer un échange |
+| `GET /api/dashboard` | Statistiques de l'utilisateur et requêtes les plus coûteuses (`pg_stat_statements`, sans les requêtes du schéma `app`) |
+| `POST /api/voice/transcribe` | Voix vers texte (Whisper sur Groq, formats webm/ogg/mp4/wav, 10 Mo au plus). Le texte est rendu pour correction, jamais envoyé seul à l'agent |
+| `GET /api` | Version de l'API ; `/` sert l'interface React compilée (`FRONTEND_DIST`) |
 
 ## Organisation
 
@@ -71,7 +88,7 @@ backend/
 │   └── api/
 │       ├── deps.py             # cookie et utilisateur courant
 │       └── routes/             # health, auth, users, history, agent
-└── tests/                      # pytest : 111 tests sans modèle, 10 tests réels (-m llm)
+└── tests/                      # pytest : 130 tests sans modèle, 11 tests réels (-m llm)
 ```
 
 Côté base, le schéma `app` est créé par `sql/01_roles.sql` (rôle `app_agent`) et par
@@ -88,10 +105,11 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python -m uvicorn app.main:app --reload     # http://127.0.0.1:8000/docs
-.\.venv\Scripts\python -m pytest                            # 111 tests (sans appel au modèle)
+.\.venv\Scripts\python -m pytest                            # 130 tests (sans appel au modèle)
 ```
 
-Avec Docker : `docker compose up -d --build backend` publie l'application sur
+Avec Docker : `docker compose up -d --build backend` (image en deux étapes : compilation de
+l'interface React, puis application Python) publie l'interface et l'API sur
 `127.0.0.1:${APP_PORT}` (8000 par défaut).
 
 La configuration est lue dans le `.env` racine, le même que celui de Docker Compose. Un

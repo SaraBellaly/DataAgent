@@ -73,8 +73,31 @@ COMMENT ON COLUMN app.historique.sql_propose IS 'SQL proposé par l''agent (une 
 COMMENT ON COLUMN app.historique.recommandations IS 'Index ou réécritures suggérés par l''agent, jamais appliqués automatiquement';
 
 -- ---------------------------------------------------------------------------
+-- Conversations : regroupent les échanges ; le contexte envoyé à l'agent est celui de la
+-- conversation en cours. Supprimer une conversation supprime ses échanges (CASCADE).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.conversations (
+    id         bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id    bigint      NOT NULL REFERENCES app.users (id) ON DELETE CASCADE,
+    titre      text        NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT conversations_titre CHECK (length(btrim(titre)) BETWEEN 1 AND 200)
+);
+CREATE INDEX IF NOT EXISTS conversations_user_date_idx ON app.conversations (user_id, updated_at DESC);
+COMMENT ON TABLE app.conversations IS 'Conversations de chaque utilisateur ; lues toujours filtrées sur l''utilisateur de la session';
+
+ALTER TABLE app.historique ADD COLUMN IF NOT EXISTS conversation_id bigint
+    REFERENCES app.conversations (id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS historique_conversation_idx ON app.historique (conversation_id, created_at);
+-- Dernier résultat obtenu après validation (200 lignes au plus), pour le relire sans réexécuter
+ALTER TABLE app.historique ADD COLUMN IF NOT EXISTS resultat jsonb;
+ALTER TABLE app.historique ADD COLUMN IF NOT EXISTS executed_at timestamptz;
+COMMENT ON COLUMN app.historique.resultat IS 'Résultat de la dernière exécution validée par l''utilisateur (200 lignes au plus)';
+
+-- ---------------------------------------------------------------------------
 -- Droits : app_agent lit et écrit les lignes, sans TRUNCATE ni droit sur la structure
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON ALL TABLES IN SCHEMA app FROM PUBLIC;
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.users, app.sessions, app.historique TO app_agent;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.users, app.sessions, app.historique, app.conversations TO app_agent;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO app_agent;

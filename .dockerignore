@@ -1,0 +1,11 @@
+# Jamais dans l'image : secrets, données brutes, dépendances locales, caches
+.env
+**/.env
+data
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+**/*.md
