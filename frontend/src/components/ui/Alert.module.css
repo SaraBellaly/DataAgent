@@ -1,0 +1,33 @@
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 14px;
+  animation: fade-up var(--t) var(--ease);
+}
+
+.icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.error {
+  color: #9d3b55;
+  background: var(--danger-bg);
+  border-color: #f7d6de;
+}
+
+.success {
+  color: #2d7a5c;
+  background: var(--success-bg);
+  border-color: #cdebdc;
+}
+
+.info {
+  color: var(--lav-600);
+  background: var(--lav-50);
+  border-color: var(--lav-100);
+}

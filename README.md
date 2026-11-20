@@ -58,7 +58,8 @@ DataAgent/
 │   ├── 06_app_schema.sql      # tables app.users, sessions, historique   (immo_admin)
 │   ├── verify.sql             # contrôles lancés par verify.ps1          (analyst_ro)
 │   └── load/                  # tables de transit et scripts de chargement (immo_admin)
-├── backend/                   # application FastAPI : authentification, historique (cf. backend/README.md)
+├── backend/                   # API FastAPI : authentification, agent, voix (cf. backend/README.md)
+├── frontend/                  # interface React : conversation, mascotte 3D, voix (cf. frontend/README.md)
 ├── maquette/index.html        # maquette statique des quatre écrans
 ├── docker-compose.yml         # PostgreSQL 16 (pg_stat_statements) et service backend
 ├── .env.example               # modèle de configuration (copier en .env)
@@ -139,8 +140,10 @@ DataAgent/
    .\scripts\create-mat-view.ps1
    ```
 
-5. **Lancer l'application** (`http://127.0.0.1:8000/docs`) : `docker compose up -d --build backend`.
-   Tests : voir [backend/README.md](backend/README.md).
+5. **Lancer l'application** : `docker compose up -d --build backend`, puis ouvrir
+   `http://127.0.0.1:8000`. La clé Groq (`LLM_API_KEY`) doit être dans `.env` (voir
+   [INSTALL.md](INSTALL.md), étape 4). Détails et tests : [backend/README.md](backend/README.md) et
+   [frontend/README.md](frontend/README.md).
 
 Fonctionnement : chaque fichier est lu par `COPY` dans une table de transit de `immo_staging`,
 toutes colonnes en texte. L'option `HEADER MATCH` refuse un fichier dont l'en-tête aurait changé.

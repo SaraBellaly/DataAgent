@@ -1,0 +1,63 @@
+.thinking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--rose-50), var(--lav-50));
+  border: 1px solid #f1e8f6;
+  font-size: 14px;
+  color: var(--text-soft);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lav-400);
+  animation: bounce 1.2s infinite ease-in-out;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.15s;
+  background: #c79ad8;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.3s;
+  background: var(--rose-400);
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+
+.text strong {
+  color: var(--text);
+}
+
+.time {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.hint {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots i {
+    animation: none;
+  }
+}

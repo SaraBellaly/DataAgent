@@ -1,0 +1,52 @@
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 14.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.md p,
+.md ul,
+.md ol {
+  margin: 0;
+}
+
+.md ul,
+.md ol {
+  padding-left: 20px;
+}
+
+.md li + li {
+  margin-top: 3px;
+}
+
+.md strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.md h4 {
+  font-size: 14.5px;
+  color: var(--text);
+}
+
+.md code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--lav-50);
+  color: var(--lav-600);
+  font-size: 12.5px;
+}
+
+.md pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 12.5px;
+  overflow-x: auto;
+  white-space: pre;
+}

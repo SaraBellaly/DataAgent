@@ -1,0 +1,58 @@
+.slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.halo {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(242, 179, 202, 0.45), rgba(198, 182, 241, 0.25) 55%, transparent 72%);
+  animation: breathe 3.6s ease-in-out infinite;
+}
+
+.slot > span:last-child {
+  position: relative;
+  animation: float 4s ease-in-out infinite;
+}
+
+.thinking > span:last-child,
+.processing > span:last-child {
+  animation: float 1.4s ease-in-out infinite;
+}
+
+.error .halo {
+  background: radial-gradient(circle, rgba(239, 170, 190, 0.5), transparent 70%);
+}
+
+.success .halo {
+  background: radial-gradient(circle, rgba(170, 225, 200, 0.45), rgba(198, 182, 241, 0.25) 55%, transparent 72%);
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(0.92); opacity: 0.8; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halo,
+  .slot > span:last-child {
+    animation: none !important;
+  }
+}
+
+.frame {
+  position: relative;
+  flex: none;
+}
+
+.frame canvas {
+  display: block;
+}

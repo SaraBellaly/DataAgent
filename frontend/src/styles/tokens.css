@@ -1,0 +1,85 @@
+/*
+ * Identité visuelle : blanc dominant, rose pastel, lavande claire, rose poudré pour l'interaction,
+ * gris très clair pour les bordures, texte gris foncé. Aucun fond sombre, dégradés très légers.
+ */
+:root {
+  /* Fonds */
+  --bg: #fbf8fc;
+  --surface: #ffffff;
+  --surface-soft: #fdfbfe;
+  --surface-muted: #f6f3f9;
+
+  /* Rose pastel / poudré */
+  --rose-50: #fff5f8;
+  --rose-100: #fde8ef;
+  --rose-200: #f9d2e0;
+  --rose-300: #f2b3ca;
+  --rose-400: #e695b3;
+  --rose-500: #d6789c;
+  --rose-600: #b95c80;
+
+  /* Lavande */
+  --lav-50: #f7f4fe;
+  --lav-100: #eee8fc;
+  --lav-200: #ddd2f8;
+  --lav-300: #c6b6f1;
+  --lav-400: #a891e6;
+  --lav-500: #8c71d8;
+  --lav-600: #7056bd;
+
+  /* Texte et bordures */
+  --text: #2e2938;
+  --text-soft: #5b5468;
+  --text-muted: #8a8398;
+  --border: #ece7f1;
+  --border-strong: #ddd6e6;
+
+  /* États */
+  --success: #3f9f7a;
+  --success-bg: #ecf8f2;
+  --warning: #b7791f;
+  --warning-bg: #fdf6e9;
+  --danger: #c4506d;
+  --danger-bg: #fdeff2;
+
+  /* Accent principal (boutons) : rose poudré vers lavande */
+  --accent: var(--rose-500);
+  --accent-hover: var(--rose-600);
+  --accent-gradient: linear-gradient(135deg, #e48fb0 0%, #b39ae8 100%);
+  --focus-ring: 0 0 0 3px rgba(200, 160, 230, 0.35);
+
+  /* Formes */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* Ombres douces */
+  --shadow-xs: 0 1px 2px rgba(60, 40, 90, 0.05);
+  --shadow-sm: 0 2px 8px rgba(80, 50, 120, 0.06);
+  --shadow: 0 8px 30px rgba(110, 80, 150, 0.08);
+  --shadow-lg: 0 20px 60px rgba(120, 80, 160, 0.12);
+
+  /* Typographie */
+  --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  /* Mise en page */
+  --sidebar-w: 268px;
+  --sidebar-w-collapsed: 78px;
+  --gutter: 16px;
+
+  /* Mouvement */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 140ms;
+  --t: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t: 0ms;
+  }
+}

@@ -16,8 +16,9 @@ INSEE, reliées par le code commune. Elle sert de terrain à un agent qui analys
 - une vue de prix au m² par commune, et sa version matérialisée (moins de 2 ms par requête) ;
 - trois rôles de travail : `immo_admin` (chargement), `analyst_ro` (lecture seule, pour l'agent)
   et `app_agent` (comptes, sessions et historique de l'application) ;
-- l'application FastAPI (authentification et historique) sur `http://127.0.0.1:8000`, avec ses
-  31 tests automatiques ;
+- l'application web (interface React et API FastAPI, dans un conteneur) sur
+  `http://127.0.0.1:8000` : inscription, connexion, questions écrites ou dictées, SQL proposé puis
+  exécuté après validation, historique, tableau de bord ; avec ses 130 tests automatiques ;
 - un script de vérification dont le résultat attendu est **38 OK, 0 échec, 0 ATTENTION**.
 
 Durée totale : environ 30 minutes, dont 8 minutes de chargement. Le téléchargement des données
@@ -108,7 +109,18 @@ ANALYST_RO_PASSWORD=<votre mot de passe 3>
 APP_AGENT_PASSWORD=<votre mot de passe 4>
 APP_PORT=8000
 COOKIE_SECURE=false
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=openai/gpt-oss-120b
+LLM_FALLBACK_MODELS=["openai/gpt-oss-20b"]
+LLM_API_KEY=<votre clé Groq>
 ```
+
+**Clé de l'API du modèle (gratuite).** L'agent utilise Groq. Créez un compte sur
+https://console.groq.com, puis *API Keys* → *Create API Key*. Copiez la clé (elle commence par
+`gsk_` et ne s'affiche qu'une fois) dans `LLM_API_KEY`. Elle sert aussi à la transcription de la
+voix (Whisper). Ne la partagez jamais et ne la commitez jamais. L'offre gratuite limite le débit :
+environ une question par minute ; quand le quota du modèle principal est épuisé, l'application
+passe automatiquement sur le modèle de secours.
 
 > **`.env` ne doit jamais être commité.** Il contient les mots de passe en clair. Le fichier
 > `.gitignore` du projet l'exclut déjà ; ne forcez pas son ajout (`git add -f .env`). Seul
@@ -378,7 +390,8 @@ La vue `v_prix_m2_commune` recalcule son agrégat sur 3,8 millions de lignes à 
 
 Résultat attendu, en quelques secondes : `lignes_vue_mat` = **4219**, puis la ligne verte
 `Vue materialisee creee avec succes.` Après tout nouveau chargement, rafraîchissez-la avec
-`.\scriptsefresh-mat-view.ps1`.
+`.\scripts
+efresh-mat-view.ps1`.
 
 ## 8. Vérification
 
@@ -408,17 +421,29 @@ Résultat attendu :
 Verification terminee : tous les controles bloquants sont OK.
 ```
 
-### 8.1 Application et tests automatiques
+### 8.1 Application web
 
-L'application FastAPI (inscription, connexion, historique) tourne dans un second conteneur :
+L'application (interface React compilée et API FastAPI) tourne dans un second conteneur. La
+première construction de l'image prend quelques minutes (compilation de l'interface) :
 
 ```powershell
 docker compose up -d --build backend
 ```
 
-Résultat attendu : `http://127.0.0.1:8000/health/db` (port `APP_PORT` de `.env`) renvoie
-`"status":"connected"` et `"user":"analyst_ro"`. La documentation interactive de l'API est sur
-`http://127.0.0.1:8000/docs`.
+Résultat attendu :
+
+- `docker compose ps` affiche `dataagent_backend` à l'état `healthy` ;
+- `http://127.0.0.1:8000` (port `APP_PORT` de `.env`) ouvre l'écran de connexion : créez un compte,
+  connectez-vous, puis posez une question, par exemple « Quel est le prix moyen au m² des
+  appartements à Bordeaux en 2025 ? ». Validez la requête proposée : le résultat attendu est
+  **4 480 €/m²** ;
+- `http://127.0.0.1:8000/health/db` renvoie `"status":"connected"` et `"user":"analyst_ro"` ;
+- la documentation interactive de l'API est sur `http://127.0.0.1:8000/docs`.
+
+Le micro (dictée) demande l'autorisation du navigateur. La voix de l'assistante utilise les voix
+françaises du navigateur ; Edge sous Windows propose des voix « Natural » de bonne qualité.
+
+### 8.2 Tests automatiques
 
 Les tests nécessitent Python 3.11 ; ils utilisent la base réelle et suppriment leurs comptes de
 test à la fin :
@@ -431,7 +456,14 @@ python -m venv .venv
 cd ..
 ```
 
-Résultat attendu : `31 passed`.
+Résultat attendu : `130 passed, 11 skipped`. Les 11 tests ignorés appellent réellement le modèle
+(questions de référence) ; ils consomment le quota Groq et ne se lancent que sur demande :
+
+```powershell
+$env:RUN_LLM_TESTS = "1"; .\.venv\Scripts\python -m pytest -m llm; Remove-Item Env:RUN_LLM_TESTS
+```
+
+Lancez-les la veille d'une démonstration plutôt que le jour même (environ 5 minutes).
 
 ## 9. Requêtes d'exemple
 

@@ -1,0 +1,99 @@
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.example {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.example:hover {
+  border-color: var(--lav-200);
+  background: var(--lav-50);
+  color: var(--lav-600);
+}
+
+.editor {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--lav-100);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fbf9ff 0%, #f8f5fe 100%);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #3d3550;
+  resize: vertical;
+  outline: none;
+}
+
+.editor:focus {
+  border-color: var(--lav-300);
+  box-shadow: var(--focus-ring);
+}
+
+.goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.goals legend {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.goal {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: 13.5px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.goal input {
+  accent-color: var(--rose-500);
+}
+
+.goalOn {
+  border-color: var(--rose-200);
+  background: var(--rose-50);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actions p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.actions code {
+  font-size: 12px;
+  color: var(--lav-600);
+}
