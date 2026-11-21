@@ -213,10 +213,23 @@ def test_bloc_sql_dangereux_en_texte_refuse(user, use_llm):
     assert fake.received[1][-1]["content"].startswith("Requête refusée")
 
 
-def test_reponse_en_texte_sans_sql_acceptee(user, use_llm):
-    use_llm(FakeLLM({"content": "Les données ne couvrent que 2025 : impossible de comparer avec 2024."}))
+def test_reponse_en_texte_sans_sql_acceptee_apres_un_rappel(user, use_llm):
+    """Texte sans requête : un rappel ; si le modèle maintient sa réponse sans SQL, elle est acceptée."""
+    texte = "Les données ne couvrent que 2025 : impossible de comparer avec 2024."
+    fake = use_llm(FakeLLM({"content": texte}, {"content": texte}))
     r = user.post("/api/agent/questions", json={"question": "Évolution des prix depuis 2024 ?"})
-    assert r.status_code == 200 and r.json()["sql_propose"] is None and r.json()["etapes"] == ["texte"]
+    assert r.status_code == 200 and r.json()["sql_propose"] is None and r.json()["etapes"] == ["rappel", "texte"]
+    assert "sql_propose" in fake.received[1][-1]["content"]
+
+
+def test_texte_sans_requete_puis_requete_apres_rappel(user, use_llm):
+    """Cas EXP-01 Q08 : le modèle décrit sa méthode sans écrire la requête ; le rappel la fait proposer."""
+    use_llm(FakeLLM(
+        {"content": "On joint la vue matérialisée à insee_communes et on trie par prix décroissant."},
+        {"tool_calls": [call("repondre", explication="Top 5.", sql_propose=SQL_BORDEAUX)]},
+    ))
+    r = user.post("/api/agent/questions", json={"question": "Top 5 des villes de plus de 100 000 habitants ?"})
+    assert r.json()["sql_propose"] == SQL_BORDEAUX and r.json()["etapes"] == ["rappel", "repondre"]
 
 
 

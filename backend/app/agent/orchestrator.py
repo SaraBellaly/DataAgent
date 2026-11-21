@@ -192,10 +192,16 @@ def ask(user_id: int, question: str, llm: ChatClient, conversation_id: int | Non
                     continue
                 run.steps.append("texte")
                 return _save(user_id, question, sql, explanation or "(sans explication)", [], diagnosis, run)
-            if not text and not reminded:
+            if not reminded:
+                # Réponse vide, ou texte libre sans requête : un seul rappel. Constaté à l'évaluation
+                # (EXP-01, Q08) : le modèle décrivait parfois sa méthode sans écrire la requête.
                 reminded = True
                 run.steps.append("rappel")
-                messages.append({"role": "user", "content": "Réponds en appelant l'outil repondre."})
+                if text:
+                    messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content":
+                                 "Appelle l'outil repondre. Si la question demande des données, mets la "
+                                 "requête SELECT dans sql_propose ; sinon, laisse sql_propose vide."})
                 continue
             if not text:
                 raise AgentFailed("L'agent n'a renvoyé aucune réponse. Reformulez la question.")
