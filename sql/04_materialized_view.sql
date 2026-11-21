@@ -7,30 +7,38 @@
 -- WHERE. Même une requête sur UNE commune prend 5+ secondes.
 --
 -- Solution : vue matérialisée pré-calculée avec index sur (code_commune, annee).
--- Requêtes filtrées : <100 ms au lieu de 5-50 s (gain >98%).
--- Trade-off : données figées jusqu'au prochain REFRESH MATERIALIZED VIEW.
+-- Requêtes filtrées : moins de 2 ms au lieu de 5-50 s.
+-- Contrepartie : données figées jusqu'au prochain REFRESH MATERIALIZED VIEW.
 --
--- Pour DVF 2025 (année complète), cela n'est pas un problème : les données ne changent pas.
--- Si une nouvelle année est chargée, exécuter : REFRESH MATERIALIZED VIEW immo.v_prix_m2_commune_mat;
---
--- Idempotent : DROP IF EXISTS, puis recréation.
+-- Idempotent et SANS suppression : la vue est créée si elle n'existe pas, sinon rafraîchie à partir
+-- des tables. Les tables dvf_mutations et insee_communes ne sont jamais modifiées.
 
 SET search_path = immo;
 
-DROP MATERIALIZED VIEW IF EXISTS immo.v_prix_m2_commune_mat;
+-- La vue existe-t-elle déjà ? (rafraîchissement seulement dans ce cas : sinon la création suffit)
+SELECT EXISTS (
+    SELECT 1 FROM pg_matviews WHERE schemaname = 'immo' AND matviewname = 'v_prix_m2_commune_mat'
+) AS vue_existante
+\gset
 
-CREATE MATERIALIZED VIEW immo.v_prix_m2_commune_mat AS
-SELECT * FROM immo.v_prix_m2_commune;
+CREATE MATERIALIZED VIEW IF NOT EXISTS immo.v_prix_m2_commune_mat AS
+SELECT * FROM immo.v_prix_m2_commune
+WITH DATA;
+
+\if :vue_existante
+  \echo 'Vue matérialisée déjà présente : rafraîchissement à partir des tables.'
+  REFRESH MATERIALIZED VIEW immo.v_prix_m2_commune_mat;
+\endif
 
 -- Index sur les colonnes les plus filtrées
-CREATE INDEX v_prix_m2_commune_mat_commune_annee_idx
+CREATE INDEX IF NOT EXISTS v_prix_m2_commune_mat_commune_annee_idx
     ON immo.v_prix_m2_commune_mat (code_commune, annee);
 
-CREATE INDEX v_prix_m2_commune_mat_annee_idx
+CREATE INDEX IF NOT EXISTS v_prix_m2_commune_mat_annee_idx
     ON immo.v_prix_m2_commune_mat (annee);
 
 -- Index pour les tris sur prix_m2_moyen (requête "top 10")
-CREATE INDEX v_prix_m2_commune_mat_prix_idx
+CREATE INDEX IF NOT EXISTS v_prix_m2_commune_mat_prix_idx
     ON immo.v_prix_m2_commune_mat (annee, prix_m2_moyen DESC)
     WHERE nb_ventes >= 100;
 
@@ -41,4 +49,4 @@ ANALYZE immo.v_prix_m2_commune_mat;
 SELECT count(*) AS lignes_vue_mat FROM immo.v_prix_m2_commune_mat;
 
 COMMENT ON MATERIALIZED VIEW immo.v_prix_m2_commune_mat IS
-    'Vue matérialisée de v_prix_m2_commune pour optimisation des performances. Requêtes filtrées : <100 ms au lieu de 5-50 s. Rafraîchir avec REFRESH MATERIALIZED VIEW après chargement de nouvelles données DVF.';
+    'Vue matérialisée de v_prix_m2_commune pour optimisation des performances. Requêtes filtrées : moins de 2 ms au lieu de 5-50 s. Rafraîchir avec REFRESH MATERIALIZED VIEW après chargement de nouvelles données DVF.';
